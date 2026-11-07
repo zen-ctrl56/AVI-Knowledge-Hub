@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox, filedialog
 FIELDS=['id','title','category','machine','symptoms','solution']
 BASE=Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent.parent
 DEFAULT=BASE/'Database'/'AVI_Database.csv'
-BG='#0b111c'; PANEL='#131f30'; TEXT='#eaf1fa'; MUTED='#a0afc2'; AMBER='#f4a340'
+BG='#090e16'; PANEL='#151e2b'; TEXT='#edf3fb'; MUTED='#8d9caf'; AMBER='#ffad45'; EDGE='#283647'; SIDEBAR='#101722'
 ISSUES={
  'Camera not detected': [('Is the camera visible in approved device diagnostics?', 'If not, record the camera ID and check approved connection/power procedures.'),('Does the camera application show an error code?', 'Record the exact error and search the knowledge base.')],
  'Program loading failed':[('Is the selected program path correct?', 'Verify against the approved program location; do not modify production programs.'),('Does the message identify a missing file or access error?', 'Record the exact message and follow approved escalation steps.')],
@@ -15,55 +15,70 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('AVI Knowledge Hub | AEGIS V3');self.root.geometry('1120x740');self.root.configure(bg=BG)
+  self.root=root;self.root.title('AEGIS  /  AVI Knowledge Hub V3.1');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.style=ttk.Style();self.style.theme_use('clam')
-  self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=29,borderwidth=0)
-  self.style.configure('Treeview.Heading',background='#24354a',foreground=TEXT)
-  self.sidebar=tk.Frame(root,bg='#0e1928',width=218);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
-  tk.Label(self.sidebar,text='◈  AEGIS',bg='#0e1928',fg=AMBER,font=('Segoe UI',22,'bold')).pack(anchor='w',padx=18,pady=(22,0))
-  tk.Label(self.sidebar,text='AVI KNOWLEDGE HUB  /  V3',bg='#0e1928',fg=MUTED,font=('Segoe UI',9)).pack(anchor='w',padx=18,pady=(0,22))
-  for name in ['Dashboard','Machine Registry','Troubleshooting Wizard','Knowledge Base']:
-   self.btn(self.sidebar,name,lambda n=name:self.show(n)).pack(fill='x',padx=12,pady=5)
-  tk.Frame(self.sidebar,bg='#304054',height=1).pack(fill='x',padx=15,pady=15)
-  self.btn(self.sidebar,'Reconnect Database',self.reconnect).pack(fill='x',padx=12,pady=5)
-  self.btn(self.sidebar,'Open Other CSV',self.open_csv).pack(fill='x',padx=12,pady=5)
-  self.btn(self.sidebar,'Save CSV',self.save).pack(fill='x',padx=12,pady=5)
-  self.status=tk.Label(self.sidebar,text='',bg='#0e1928',fg=MUTED,wraplength=184,justify='left',font=('Segoe UI',9));self.status.pack(side='bottom',fill='x',padx=14,pady=22)
+  self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=37,borderwidth=0,font=('Segoe UI',10))
+  self.style.configure('Treeview.Heading',background='#263345',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
+  self.style.map('Treeview',background=[('selected','#38485a')],foreground=[('selected','#ffffff')])
+  self.style.configure('TCombobox',padding=7)
+  self.sidebar=tk.Frame(root,bg=SIDEBAR,width=248);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
+  tk.Frame(self.sidebar,bg=AMBER,height=4).pack(fill='x')
+  tk.Label(self.sidebar,text='◈  AEGIS',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
+  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB',bg=SIDEBAR,fg=MUTED,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
+  tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#687a90',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
+  self.nav_buttons={}
+  for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base')]:
+   button=self.btn(self.sidebar,caption,lambda n=name:self.show(n));button.pack(fill='x',padx=13,pady=5);self.nav_buttons[name]=button
+  tk.Frame(self.sidebar,bg=EDGE,height=1).pack(fill='x',padx=19,pady=(26,18))
+  tk.Label(self.sidebar,text='DATABASE TOOLS',bg=SIDEBAR,fg='#687a90',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
+  self.btn(self.sidebar,'↻  Reconnect',self.reconnect).pack(fill='x',padx=13,pady=5)
+  self.btn(self.sidebar,'▤  Open Other CSV',self.open_csv).pack(fill='x',padx=13,pady=5)
+  self.btn(self.sidebar,'↓  Save Database',self.save).pack(fill='x',padx=13,pady=5)
+  self.status=tk.Label(self.sidebar,text='',bg=SIDEBAR,fg=MUTED,wraplength=206,justify='left',font=('Segoe UI',9));self.status.pack(side='bottom',fill='x',padx=19,pady=24)
   self.main=tk.Frame(root,bg=BG);self.main.pack(side='left',fill='both',expand=True)
   self.root.protocol('WM_DELETE_WINDOW',self.close)
   self.reconnect()
  def btn(self,parent,label,command):
-  return tk.Button(parent,text=label,command=command,bg='#1b2a3c',fg=TEXT,activebackground='#32475d',activeforeground=AMBER,relief='flat',anchor='w',padx=14,pady=10,font=('Segoe UI',10))
+  return tk.Button(parent,text=label,command=command,bg='#202c3c',fg=TEXT,activebackground='#3a485b',activeforeground=AMBER,relief='flat',anchor='w',cursor='hand2',padx=17,pady=12,font=('Segoe UI',10,'bold'),bd=0,highlightthickness=0)
  def label(self,parent,text,size=11,color=TEXT,bold=False):
   return tk.Label(parent,text=text,bg=parent.cget('bg'),fg=color,font=('Segoe UI',size,'bold' if bold else 'normal'),anchor='w',justify='left')
  def clear(self):
   for child in self.main.winfo_children():child.destroy()
  def heading(self,title,subtitle=''):
-  self.label(self.main,title,24,AMBER,True).pack(anchor='w',padx=26,pady=(24,3))
-  self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=26,pady=(0,18))
+  self.label(self.main,'AEGIS  /  OPERATIONS CONSOLE',9,AMBER,True).pack(anchor='w',padx=30,pady=(26,8))
+  self.label(self.main,title,26,TEXT,True).pack(anchor='w',padx=30,pady=(0,5))
+  self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=30,pady=(0,20))
+  tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=30,pady=(0,14))
  def show(self,view):
   self.view=view;self.clear()
+  for name,button in self.nav_buttons.items():button.configure(bg='#3a3028' if name==view else '#202c3c',fg=AMBER if name==view else TEXT)
   if view=='Dashboard':self.dashboard()
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
   else:self.knowledge()
  def dashboard(self):
-  self.heading('COMMAND OVERVIEW','Centralized AVI troubleshooting and reference library — manual records, not live telemetry')
-  bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=24,pady=10)
-  for title,val in [('REGISTERED MACHINES','26'),('KNOWLEDGE ARTICLES',str(len(self.rows))),('DATABASE','CONNECTED' if self.path.exists() else 'NOT FOUND')]:
-   tile=tk.Frame(bar,bg=PANEL,padx=17,pady=18);tile.pack(side='left',fill='x',expand=True,padx=5)
-   self.label(tile,title,9,MUTED).pack(anchor='w');self.label(tile,val,22,AMBER,True).pack(anchor='w',pady=8)
-  self.label(self.main,'QUICK ACCESS',12,TEXT,True).pack(anchor='w',padx=30,pady=(25,12))
-  for title,view in [('Browse 26 machines','Machine Registry'),('Start guided troubleshooting','Troubleshooting Wizard'),('Search and edit solutions','Knowledge Base')]:
+  self.heading('Command overview','Your centralized workspace for machine records, guided diagnosis and documented solutions')
+  hero=tk.Frame(self.main,bg='#1b2636',padx=25,pady=23);hero.pack(fill='x',padx=30,pady=(4,19))
+  self.label(hero,'ENGINEERING KNOWLEDGE SYSTEM',10,AMBER,True).pack(anchor='w')
+  self.label(hero,'Every solution. One workspace.',21,TEXT,True).pack(anchor='w',pady=(7,6))
+  self.label(hero,'Offline-capable  •  Shared CSV database  •  26 reference machines',10,MUTED).pack(anchor='w')
+  bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=25,pady=(0,13))
+  for title,val,sub in [('MACHINES','26','Registered reference IDs'),('ARTICLES',str(len(self.rows)),'Saved knowledge records'),('DATABASE','ONLINE' if self.path.exists() else 'MISSING','Shared CSV connection')]:
+   tile=tk.Frame(bar,bg=PANEL,padx=19,pady=19,highlightbackground=EDGE,highlightthickness=1);tile.pack(side='left',fill='both',expand=True,padx=5)
+   self.label(tile,title,9,MUTED,True).pack(anchor='w')
+   self.label(tile,val,25,AMBER,True).pack(anchor='w',pady=(8,2))
+   self.label(tile,sub,9,MUTED).pack(anchor='w')
+  self.label(self.main,'QUICK ACTIONS',11,TEXT,True).pack(anchor='w',padx=30,pady=(20,12))
+  for title,view in [('▤   Explore machine registry','Machine Registry'),('◇   Launch troubleshooting wizard','Troubleshooting Wizard'),('▣   Browse knowledge articles','Knowledge Base')]:
    self.btn(self.main,title,lambda v=view:self.show(v)).pack(fill='x',padx=30,pady=5)
-  self.label(self.main,'Database: '+str(self.path),9,MUTED).pack(anchor='w',padx=30,pady=20)
+  self.label(self.main,'DATABASE PATH  •  '+str(self.path),9,MUTED).pack(anchor='w',padx=30,pady=19)
  def registry(self):
   self.heading('MACHINE REGISTRY','26 reference IDs; status and machine data are not live')
   grid=tk.Frame(self.main,bg=BG);grid.pack(fill='x',padx=25)
   for i in range(26):
    m='AVI-'+str(i+1).zfill(2)
-   b=tk.Button(grid,text=m,bg=AMBER if m==self.machine else PANEL,fg='#101720' if m==self.machine else TEXT,relief='flat',padx=13,pady=11,command=lambda x=m:self.choose_machine(x))
+   b=tk.Button(grid,text='▣  '+m,bg=AMBER if m==self.machine else PANEL,fg='#101720' if m==self.machine else TEXT,activebackground='#d58a30',relief='flat',padx=12,pady=15,font=('Segoe UI',10,'bold'),cursor='hand2',command=lambda x=m:self.choose_machine(x))
    b.grid(row=i//7,column=i%7,padx=4,pady=4,sticky='ew')
   self.label(self.main,'Selected: '+self.machine,15,AMBER,True).pack(anchor='w',padx=30,pady=(25,10))
   matches=[r for r in self.rows if r.get('machine','').upper()==self.machine]
