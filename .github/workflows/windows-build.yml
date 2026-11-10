@@ -1,6 +1,12 @@
-name: Build AVI Knowledge Hub Windows EXE
+name: Build and Release AEGIS Windows EXE
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish public GitHub Release v3.1.0 after successful build'
+        type: boolean
+        required: true
+        default: false
   push:
     tags: ['v*']
 permissions:
@@ -13,23 +19,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install pinned PyInstaller
+      - name: Install PyInstaller
         run: python -m pip install pyinstaller==6.16.0
-      - name: Build Windows application
+      - name: Validate Python source
+        run: python -m py_compile source/avi_hub.py
+      - name: Build Windows executable
         run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name AVI_Knowledge_Hub source/avi_hub.py
-      - name: Package executable
+      - name: Package EXE and empty CSV template
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release/Database | Out-Null
           Copy-Item dist/AVI_Knowledge_Hub.exe release/
-          Copy-Item Database/AVI_Database.csv release/Database/AVI_Database_TEMPLATE.csv
+          Copy-Item database/AVI_Database.csv release/Database/AVI_Database_TEMPLATE.csv
           Compress-Archive -Path release/* -DestinationPath AVI_Knowledge_Hub_Windows.zip -Force
-      - uses: actions/upload-artifact@v4
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
           name: AVI_Knowledge_Hub_Windows
           path: AVI_Knowledge_Hub_Windows.zip
-      - name: Publish GitHub Release for version tags
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: AVI_Knowledge_Hub_Windows.zip
+      - name: Publish versioned GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $tag = $env:GITHUB_REF.Substring(10)
+          } else {
+            $tag = 'v3.1.0'
+          }
+          gh release create $tag AVI_Knowledge_Hub_Windows.zip --target $env:GITHUB_SHA --title "AEGIS $tag - AVI Knowledge Hub Windows" --notes "Portable Windows EXE with troubleshooting wizard, 26-machine registry, redesigned dashboard and shared-network CSV support. Extract and place your existing populated CSV at Database/AVI_Database.csv beside the EXE. The included CSV is an EMPTY template only. Production use requires site IT approval and testing." --latest
