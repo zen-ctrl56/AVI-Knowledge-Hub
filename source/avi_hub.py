@@ -1,4 +1,4 @@
-import csv, os, sys, shutil, tempfile, tkinter as tk
+import csv, json, os, sys, shutil, tempfile, tkinter as tk
 from pathlib import Path
 from datetime import datetime
 from tkinter import ttk, messagebox, filedialog
@@ -6,6 +6,9 @@ from tkinter import ttk, messagebox, filedialog
 FIELDS=['id','title','category','machine','symptoms','solution']
 BASE=Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent.parent
 DEFAULT=BASE/'Database'/'AVI_Database.csv'
+STATUSES=['Running','Down','Maintenance','Idle','Attention']
+STATUS_COLORS={'Running':'#39c99a','Down':'#ff6577','Maintenance':'#f6b75e','Idle':'#8193a8','Attention':'#ff875c'}
+SYMBOLS=['▣','◆','●','▲','■','⬢','✚','⚙','▤','◉']
 BG='#090e16'; PANEL='#151e2b'; TEXT='#edf3fb'; MUTED='#8d9caf'; AMBER='#ffad45'; EDGE='#283647'; SIDEBAR='#101722'
 ISSUES={
  'Camera not detected': [('Is the camera visible in approved device diagnostics?', 'If not, record the camera ID and check approved connection/power procedures.'),('Does the camera application show an error code?', 'Record the exact error and search the knowledge base.')],
@@ -15,8 +18,9 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('AEGIS  /  AVI Knowledge Hub V3.1');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
-  self.rows=[];self.path=DEFAULT;self.dirty=False;self.machine='AVI-01';self.view='Dashboard'
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
+  self.machines=[];self.notes=[];self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
   self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=37,borderwidth=0,font=('Segoe UI',10))
   self.style.configure('Treeview.Heading',background='#263345',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
@@ -24,7 +28,7 @@ class App:
   self.style.configure('TCombobox',padding=7)
   self.sidebar=tk.Frame(root,bg=SIDEBAR,width=248);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
   tk.Frame(self.sidebar,bg=AMBER,height=4).pack(fill='x')
-  tk.Label(self.sidebar,text='◈  AEGIS',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
+  tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
   tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB',bg=SIDEBAR,fg=MUTED,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
   tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#687a90',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.nav_buttons={}
@@ -46,7 +50,7 @@ class App:
  def clear(self):
   for child in self.main.winfo_children():child.destroy()
  def heading(self,title,subtitle=''):
-  self.label(self.main,'AEGIS  /  OPERATIONS CONSOLE',9,AMBER,True).pack(anchor='w',padx=30,pady=(26,8))
+  self.label(self.main,'ZENTREK  /  PRODUCTION OPERATIONS',9,AMBER,True).pack(anchor='w',padx=30,pady=(26,8))
   self.label(self.main,title,26,TEXT,True).pack(anchor='w',padx=30,pady=(0,5))
   self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=30,pady=(0,20))
   tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=30,pady=(0,14))
@@ -57,34 +61,168 @@ class App:
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
   else:self.knowledge()
+ def layout_file(self):
+  return self.path.parent/'ZENTREK_Floorplan.json'
+ def default_machines(self):
+  return [{'id':f'AVI-{i:02d}','name':f'AVI {i:02d}','status':'Idle','symbol':'▣','x':0.07+((i-1)%7)*0.14,'y':0.12+((i-1)//7)*0.23} for i in range(1,27)]
+ def load_layout(self):
+  self.layout_path=self.layout_file()
+  try:
+   if self.layout_path.exists():
+    with open(self.layout_path,encoding='utf-8') as f:data=json.load(f)
+    self.machines=data.get('machines',self.default_machines())
+    self.notes=data.get('notes',[])
+    if not isinstance(self.machines,list) or not isinstance(self.notes,list):raise ValueError('Invalid layout data')
+   else:self.machines=self.default_machines();self.notes=[]
+   self.layout_dirty=False
+  except Exception as e:
+   self.machines=self.default_machines();self.notes=[]
+   messagebox.showwarning('Layout load issue',f'Using default floor plan. Existing file was not overwritten.\n{e}')
+ def save_layout(self,quiet=False):
+  path=self.layout_file();lock=Path(str(path)+'.lock')
+  try:
+   path.parent.mkdir(parents=True,exist_ok=True)
+   fd=os.open(str(lock),os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
+  except Exception as e:
+   messagebox.showerror('Layout save blocked',str(e));return False
+  try:
+   if path.exists():
+    backup=path.with_name(path.stem+'_backup_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')+'.json')
+    shutil.copy2(path,backup)
+   fd,tmp=tempfile.mkstemp(prefix='.zentrek_',suffix='.json',dir=str(path.parent))
+   try:
+    with os.fdopen(fd,'w',encoding='utf-8') as out:
+     json.dump({'version':1,'machines':self.machines,'notes':self.notes},out,ensure_ascii=False,indent=2)
+    os.replace(tmp,path)
+   finally:
+    if os.path.exists(tmp):os.unlink(tmp)
+   self.layout_dirty=False
+   if not quiet:messagebox.showinfo('Saved','Floor plan, machine statuses and pinboard saved.')
+   return True
+  except Exception as e:messagebox.showerror('Layout save failed',str(e));return False
+  finally:
+   try:lock.unlink()
+   except OSError:pass
  def dashboard(self):
-  self.heading('Command overview','Your centralized workspace for machine records, guided diagnosis and documented solutions')
-  hero=tk.Frame(self.main,bg='#1b2636',padx=25,pady=23);hero.pack(fill='x',padx=30,pady=(4,19))
-  self.label(hero,'ENGINEERING KNOWLEDGE SYSTEM',10,AMBER,True).pack(anchor='w')
-  self.label(hero,'Every solution. One workspace.',21,TEXT,True).pack(anchor='w',pady=(7,6))
-  self.label(hero,'Offline-capable  •  Shared CSV database  •  26 reference machines',10,MUTED).pack(anchor='w')
-  bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=25,pady=(0,13))
-  for title,val,sub in [('MACHINES','26','Registered reference IDs'),('ARTICLES',str(len(self.rows)),'Saved knowledge records'),('DATABASE','ONLINE' if self.path.exists() else 'MISSING','Shared CSV connection')]:
-   tile=tk.Frame(bar,bg=PANEL,padx=19,pady=19,highlightbackground=EDGE,highlightthickness=1);tile.pack(side='left',fill='both',expand=True,padx=5)
+  self.heading('Production overview','Manual machine status, immediate-attention pinboard and knowledge overview')
+  bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=25,pady=(0,14))
+  attention=sum(m.get('status') in ('Down','Attention') for m in self.machines)
+  for title,val,sub in [('MACHINES',str(len(self.machines)),'Editable floor registry'),('NEED ATTENTION',str(attention),'Down or attention'),('ARTICLES',str(len(self.rows)),'Knowledge records'),('DATABASE','READY' if self.path.exists() else 'MISSING','Shared CSV')]:
+   tile=tk.Frame(bar,bg=PANEL,padx=15,pady=17,highlightbackground=EDGE,highlightthickness=1);tile.pack(side='left',fill='both',expand=True,padx=4)
    self.label(tile,title,9,MUTED,True).pack(anchor='w')
-   self.label(tile,val,25,AMBER,True).pack(anchor='w',pady=(8,2))
+   self.label(tile,val,22,AMBER if title!='NEED ATTENTION' or attention==0 else '#ff6577',True).pack(anchor='w',pady=5)
    self.label(tile,sub,9,MUTED).pack(anchor='w')
-  self.label(self.main,'QUICK ACTIONS',11,TEXT,True).pack(anchor='w',padx=30,pady=(20,12))
-  for title,view in [('▤   Explore machine registry','Machine Registry'),('◇   Launch troubleshooting wizard','Troubleshooting Wizard'),('▣   Browse knowledge articles','Knowledge Base')]:
-   self.btn(self.main,title,lambda v=view:self.show(v)).pack(fill='x',padx=30,pady=5)
-  self.label(self.main,'DATABASE PATH  •  '+str(self.path),9,MUTED).pack(anchor='w',padx=30,pady=19)
+  top=tk.Frame(self.main,bg=BG);top.pack(fill='x',padx=30,pady=(9,8))
+  self.label(top,'📌  IMMEDIATE ATTENTION  /  PINBOARD',13,AMBER,True).pack(side='left')
+  self.btn(top,'+ Pin Note',self.add_note).pack(side='right')
+  board=tk.Frame(self.main,bg=BG);board.pack(fill='both',expand=True,padx=26)
+  if not self.notes:self.label(board,'No pinned notes. Add a priority reminder for the production team.',11,MUTED).pack(anchor='w',padx=8,pady=15)
+  for i,note in enumerate(self.notes):
+   card=tk.Frame(board,bg='#263043',padx=13,pady=10,highlightbackground=EDGE,highlightthickness=1);card.pack(fill='x',padx=4,pady=4)
+   header=tk.Frame(card,bg='#263043');header.pack(fill='x')
+   self.label(header,'●  '+note.get('title','Attention'),11,AMBER,True).pack(side='left')
+   tk.Button(header,text='✕',command=lambda j=i:self.delete_note(j),bg='#263043',fg='#ff8996',relief='flat',cursor='hand2').pack(side='right')
+   self.btn(header,'Edit',lambda j=i:self.add_note(j)).pack(side='right',padx=7)
+   self.label(card,note.get('body',''),10,TEXT).pack(anchor='w',pady=(4,0))
+  self.label(self.main,'Statuses and notes are manually maintained, not live telemetry.',9,MUTED).pack(anchor='w',padx=30,pady=(8,12))
+ def add_note(self,index=None):
+  old=self.notes[index] if index is not None else {}
+  win=tk.Toplevel(self.root);win.title('Immediate Attention Pin');win.geometry('490x370');win.configure(bg=BG);win.transient(self.root);win.grab_set()
+  self.label(win,'PIN TITLE',11,AMBER,True).pack(anchor='w',padx=20,pady=(20,6))
+  title=tk.Entry(win,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',font=('Segoe UI',12));title.pack(fill='x',padx=20,ipady=8);title.insert(0,old.get('title',''))
+  self.label(win,'NOTE / ACTION',11,AMBER,True).pack(anchor='w',padx=20,pady=(16,6))
+  body=tk.Text(win,height=7,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',wrap='word');body.pack(fill='both',expand=True,padx=20);body.insert('1.0',old.get('body',''))
+  def commit():
+   if not title.get().strip():messagebox.showwarning('Missing title','Enter a title.',parent=win);return
+   note={'title':title.get().strip(),'body':body.get('1.0','end').strip()}
+   if index is None:self.notes.insert(0,note)
+   else:self.notes[index]=note
+   self.layout_dirty=True;win.destroy();self.save_layout(quiet=True);self.show('Dashboard')
+  self.btn(win,'Save Pin',commit).pack(anchor='e',padx=20,pady=12)
+ def delete_note(self,index):
+  if messagebox.askyesno('Remove pin','Remove this immediate-attention note?'):
+   self.notes.pop(index);self.layout_dirty=True;self.save_layout(quiet=True);self.show('Dashboard')
  def registry(self):
-  self.heading('MACHINE REGISTRY','26 reference IDs; status and machine data are not live')
-  grid=tk.Frame(self.main,bg=BG);grid.pack(fill='x',padx=25)
-  for i in range(26):
-   m='AVI-'+str(i+1).zfill(2)
-   b=tk.Button(grid,text='▣  '+m,bg=AMBER if m==self.machine else PANEL,fg='#101720' if m==self.machine else TEXT,activebackground='#d58a30',relief='flat',padx=12,pady=15,font=('Segoe UI',10,'bold'),cursor='hand2',command=lambda x=m:self.choose_machine(x))
-   b.grid(row=i//7,column=i%7,padx=4,pady=4,sticky='ew')
-  self.label(self.main,'Selected: '+self.machine,15,AMBER,True).pack(anchor='w',padx=30,pady=(25,10))
-  matches=[r for r in self.rows if r.get('machine','').upper()==self.machine]
-  self.label(self.main,f'{len(matches)} saved knowledge record(s) for this machine',11,MUTED).pack(anchor='w',padx=30)
-  for r in matches[:10]:self.label(self.main,'• '+r['title'],11).pack(anchor='w',padx=35,pady=3)
-  self.btn(self.main,'Add record for '+self.machine,lambda:self.edit_record(machine=self.machine)).pack(anchor='w',padx=30,pady=15)
+  self.heading('Production floor planner','Drag machine symbols in Edit Layout mode. Select a machine to rename or update its status.')
+  controls=tk.Frame(self.main,bg=BG);controls.pack(fill='x',padx=30,pady=(0,9))
+  self.btn(controls,'✓ Finish Editing' if self.edit_floor else '✥ Edit Layout',self.toggle_floor).pack(side='left',padx=(0,7))
+  self.btn(controls,'+ Add Machine',self.add_machine).pack(side='left',padx=7)
+  self.btn(controls,'Save Floor Plan',self.save_layout).pack(side='right')
+  self.label(self.main,'● Running     ● Down     ● Maintenance     ● Idle     ● Attention    |    Colors indicate manually set status',9,MUTED).pack(anchor='w',padx=30,pady=(0,7))
+  self.floor=tk.Canvas(self.main,bg='#121d2b',highlightthickness=1,highlightbackground=EDGE,height=420,cursor='crosshair' if self.edit_floor else 'arrow')
+  self.floor.pack(fill='both',expand=True,padx=30,pady=(0,12))
+  self.floor.bind('<Configure>',lambda e:self.draw_floor())
+  self.floor.bind('<ButtonPress-1>',self.floor_press)
+  self.floor.bind('<B1-Motion>',self.floor_drag)
+  self.floor.bind('<ButtonRelease-1>',self.floor_release)
+  self.draw_floor()
+  detail=tk.Frame(self.main,bg=BG);detail.pack(fill='x',padx=30,pady=(0,14))
+  m=self.machine_by_id(self.machine)
+  if m:
+   self.label(detail,f"SELECTED: {m['name']}  /  {m['id']}  /  {m.get('status','Idle')}",12,AMBER,True).pack(side='left')
+   self.btn(detail,'Edit Machine',lambda:self.edit_machine(m['id'])).pack(side='right')
+   self.btn(detail,'Add Knowledge',lambda:self.edit_record(machine=m['id'])).pack(side='right',padx=7)
+ def machine_by_id(self,mid):
+  return next((m for m in self.machines if m.get('id')==mid),None)
+ def toggle_floor(self):
+  self.edit_floor=not self.edit_floor;self.show('Machine Registry')
+ def draw_floor(self):
+  if not hasattr(self,'floor') or not self.floor.winfo_exists():return
+  c=self.floor;c.delete('all');w=max(c.winfo_width(),550);h=max(c.winfo_height(),320)
+  for x in range(0,w,40):c.create_line(x,0,x,h,fill='#1c2b3b')
+  for y in range(0,h,40):c.create_line(0,y,w,y,fill='#1c2b3b')
+  c.create_text(17,15,text='PRODUCTION FLOOR  /  CUSTOM LAYOUT',fill='#72869b',anchor='nw',font=('Segoe UI',10,'bold'))
+  for m in self.machines:
+   x=max(35,min(w-35,float(m.get('x',.5))*w));y=max(45,min(h-28,float(m.get('y',.5))*h))
+   mid=m['id'];color=STATUS_COLORS.get(m.get('status'),MUTED);selected=mid==self.machine
+   c.create_rectangle(x-45,y-23,x+45,y+26,fill='#334354' if selected else '#1c2b3b',outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
+   c.create_text(x,y-7,text=str(m.get('symbol','▣')),fill=color,font=('Segoe UI Symbol',17,'bold'),tags=('machine',mid))
+   c.create_text(x,y+13,text=str(m.get('name',mid))[:17],fill=TEXT,font=('Segoe UI',9,'bold'),tags=('machine',mid))
+  if self.edit_floor:c.create_text(w-12,15,text='EDIT MODE  •  DRAG TO MOVE',anchor='ne',fill=AMBER,font=('Segoe UI',9,'bold'))
+ def floor_press(self,event):
+  tags=self.floor.gettags('current');mid=tags[1] if len(tags)>1 and tags[0]=='machine' else None
+  if not mid:return
+  self.machine=mid;self.drag={'id':mid,'moved':False,'x':event.x,'y':event.y};self.draw_floor()
+ def floor_drag(self,event):
+  if not self.drag or not self.edit_floor:return
+  m=self.machine_by_id(self.drag['id'])
+  if not m:return
+  w=max(self.floor.winfo_width(),1);h=max(self.floor.winfo_height(),1)
+  m['x']=max(.06,min(.94,event.x/w));m['y']=max(.12,min(.92,event.y/h))
+  self.drag['moved']=True;self.layout_dirty=True;self.draw_floor()
+ def floor_release(self,event):
+  if not self.drag:return
+  moved=self.drag['moved'];mid=self.drag['id'];self.drag=None
+  if not moved:self.edit_machine(mid)
+  else:self.show('Machine Registry')
+ def add_machine(self):
+  ids={m['id'] for m in self.machines};n=1
+  while f'AVI-{n:02d}' in ids:n+=1
+  mid=f'AVI-{n:02d}'
+  self.machines.append({'id':mid,'name':f'AVI {n:02d}','status':'Idle','symbol':'▣','x':.5,'y':.5})
+  self.machine=mid;self.layout_dirty=True;self.edit_machine(mid)
+ def edit_machine(self,mid):
+  m=self.machine_by_id(mid)
+  if not m:return
+  win=tk.Toplevel(self.root);win.title('Machine Properties');win.geometry('475x455');win.configure(bg=BG);win.transient(self.root);win.grab_set()
+  self.label(win,'MACHINE ID  /  '+mid,12,AMBER,True).pack(anchor='w',padx=22,pady=(20,13))
+  self.label(win,'DISPLAY NAME',10,MUTED).pack(anchor='w',padx=22)
+  name=tk.Entry(win,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',font=('Segoe UI',12));name.pack(fill='x',padx=22,pady=(4,12),ipady=7);name.insert(0,m.get('name',mid))
+  self.label(win,'MANUAL STATUS',10,MUTED).pack(anchor='w',padx=22)
+  status=tk.StringVar(value=m.get('status','Idle'));ttk.Combobox(win,textvariable=status,values=STATUSES,state='readonly').pack(fill='x',padx=22,pady=(4,12))
+  self.label(win,'FLOOR SYMBOL  /  PICK OR TYPE YOUR OWN',10,MUTED).pack(anchor='w',padx=22)
+  symbol=tk.StringVar(value=m.get('symbol','▣'));ttk.Combobox(win,textvariable=symbol,values=SYMBOLS).pack(fill='x',padx=22,pady=(4,12))
+  self.label(win,'The stable machine ID stays unchanged to preserve knowledge links.',9,MUTED).pack(anchor='w',padx=22,pady=6)
+  actions=tk.Frame(win,bg=BG);actions.pack(fill='x',padx=22,pady=15)
+  def commit():
+   if not name.get().strip() or not symbol.get().strip():messagebox.showwarning('Required','Name and symbol are required.',parent=win);return
+   m.update(name=name.get().strip(),status=status.get(),symbol=symbol.get().strip()[:4]);self.layout_dirty=True
+   win.destroy();self.save_layout(quiet=True);self.show('Machine Registry')
+  self.btn(actions,'Save Changes',commit).pack(side='left')
+  def remove():
+   if not messagebox.askyesno('Remove machine','Remove this machine from the floor registry? Knowledge records remain.',parent=win):return
+   self.machines.remove(m);self.machine=self.machines[0]['id'] if self.machines else '';self.layout_dirty=True;win.destroy();self.save_layout(quiet=True);self.show('Machine Registry')
+  self.btn(actions,'Remove Machine',remove).pack(side='right')
  def choose_machine(self,m):self.machine=m;self.show('Machine Registry')
  def wizard(self):
   self.heading('GUIDED TROUBLESHOOTING','Document observations and follow site-approved procedures')
@@ -92,7 +230,7 @@ class App:
   self.label(wrap,'Select symptom',12,AMBER,True).pack(anchor='w')
   issue=tk.StringVar(value=list(ISSUES)[0]);combo=ttk.Combobox(wrap,textvariable=issue,values=list(ISSUES),state='readonly',width=42);combo.pack(anchor='w',pady=12)
   self.label(wrap,'Machine ID',11,MUTED).pack(anchor='w')
-  machine=tk.StringVar(value=self.machine);ttk.Combobox(wrap,textvariable=machine,values=['AVI-'+str(i).zfill(2) for i in range(1,27)],state='readonly',width=18).pack(anchor='w',pady=8)
+  machine=tk.StringVar(value=self.machine);ttk.Combobox(wrap,textvariable=machine,values=[m['id'] for m in self.machines],state='readonly',width=18).pack(anchor='w',pady=8)
   output=tk.Text(wrap,height=14,bg='#0b1523',fg=TEXT,insertbackground=TEXT,wrap='word',relief='flat',font=('Segoe UI',10));output.pack(fill='both',expand=True,pady=12)
   def run():
    output.delete('1.0','end');output.insert('end',f'TROUBLESHOOTING CHECKLIST — {machine.get()}\nSYMPTOM: {issue.get()}\n\n')
@@ -151,14 +289,14 @@ class App:
   self.btn(win,'Save Article',commit).pack(anchor='e',padx=18,pady=15)
  def reconnect(self):
   if DEFAULT.exists():self.load(DEFAULT)
-  else:self.path=DEFAULT;self.rows=[];self.status.config(text='Database missing:\n'+str(DEFAULT));self.show('Dashboard')
+  else:self.path=DEFAULT;self.rows=[];self.load_layout();self.status.config(text='Database missing:\n'+str(DEFAULT));self.show('Dashboard')
  def load(self,path):
   try:
    with open(path,'r',encoding='utf-8-sig',newline='') as f:
     reader=csv.DictReader(f)
     if not set(FIELDS).issubset(reader.fieldnames or []):raise ValueError('CSV headers do not match expected schema')
     self.rows=[{k:r.get(k,'') for k in FIELDS} for r in reader]
-   self.path=Path(path);self.dirty=False;self.status.config(text='Connected:\n'+str(self.path));self.show(self.view)
+   self.path=Path(path);self.dirty=False;self.load_layout();self.status.config(text='Connected:\n'+str(self.path));self.show(self.view)
   except Exception as e:messagebox.showerror('CSV load error',str(e))
  def open_csv(self):
   p=filedialog.askopenfilename(filetypes=[('CSV database','*.csv')])
@@ -186,7 +324,7 @@ class App:
    try:lock.unlink()
    except OSError:pass
  def close(self):
-  if self.dirty and not messagebox.askyesno('Unsaved edits','Discard unsaved changes?'):return
+  if (self.dirty or self.layout_dirty) and not messagebox.askyesno('Unsaved edits','Discard unsaved changes?'):return
   self.root.destroy()
 if __name__=='__main__':
  root=tk.Tk();App(root);root.mainloop()
