@@ -333,21 +333,45 @@ class App:
   self.btn(actions,'Remove Machine',remove).pack(side='right')
  def choose_machine(self,m):self.machine=m;self.show('Machine Registry')
  def wizard(self):
-  self.heading('GUIDED TROUBLESHOOTING','Document observations and follow site-approved procedures')
+  self.heading('GUIDED TROUBLESHOOTING','Interactive decision paths and site-approved guidance')
   wrap=tk.Frame(self.main,bg=PANEL,padx=24,pady=20);wrap.pack(fill='both',expand=True,padx=30,pady=10)
+  flows=self.load_wizard_flows()
   self.label(wrap,'Select symptom',12,AMBER,True).pack(anchor='w')
-  issue=tk.StringVar(value=list(ISSUES)[0]);combo=ttk.Combobox(wrap,textvariable=issue,values=list(ISSUES),state='readonly',width=42);combo.pack(anchor='w',pady=12)
+  issue=tk.StringVar(value=next(iter(flows),''))
+  ttk.Combobox(wrap,textvariable=issue,values=list(flows),state='readonly',width=42).pack(anchor='w',pady=12)
   self.label(wrap,'Machine ID',11,MUTED).pack(anchor='w')
-  machine=tk.StringVar(value=self.machine);ttk.Combobox(wrap,textvariable=machine,values=[m['id'] for m in self.machines],state='readonly',width=18).pack(anchor='w',pady=8)
-  output=tk.Text(wrap,height=14,bg='#0b1523',fg=TEXT,insertbackground=TEXT,wrap='word',relief='flat',font=('Segoe UI',10));output.pack(fill='both',expand=True,pady=12)
-  def run():
-   output.delete('1.0','end');output.insert('end',f'TROUBLESHOOTING CHECKLIST — {machine.get()}\nSYMPTOM: {issue.get()}\n\n')
-   for n,(question,guidance) in enumerate(ISSUES[issue.get()],1):output.insert('end',f'{n}. {question}\n   Guidance: {guidance}\n\n')
-   output.insert('end','Record observations and follow authorized escalation procedures.\n')
-  self.btn(wrap,'Generate Checklist',run).pack(anchor='w');run()
-  def add():
-   self.edit_record(machine=machine.get(),title=issue.get(),symptoms=output.get('1.0','end').strip())
-  self.btn(wrap,'Save as Knowledge Record',add).pack(anchor='w',pady=6)
+  machine=tk.StringVar(value=self.machine)
+  ttk.Combobox(wrap,textvariable=machine,values=[m['id'] for m in self.machines],state='readonly',width=18).pack(anchor='w',pady=8)
+  question=self.label(wrap,'',14,TEXT,True);question.pack(anchor='w',pady=12)
+  guidance=self.label(wrap,'',11,MUTED);guidance.pack(anchor='w',pady=10)
+  state={'step':0,'answers':[]}
+  def render():
+   steps=flows.get(issue.get(),[])
+   if not steps:question.configure(text='No diagnostic steps configured.');return
+   n=min(state['step'],len(steps)-1);item=steps[n]
+   question.configure(text=str(n+1)+'. '+item.get('question',''))
+   guidance.configure(text=item.get('guidance','Select Yes or No to continue.'))
+  def answer(value):
+   steps=flows.get(issue.get(),[])
+   if not steps:return
+   item=steps[min(state['step'],len(steps)-1)]
+   state['answers'].append((item.get('question',''),value))
+   outcome=item.get(value.lower())
+   if outcome:
+    guidance.configure(text='OUTCOME: '+outcome+'\nRecord your observations and follow approved procedures.')
+   elif state['step']+1<len(steps):
+    state['step']+=1;render()
+   else:guidance.configure(text='Checklist complete. Record observations or escalate as required.')
+  def restart(*_):
+   state['step']=0;state['answers']=[];render()
+  issue.trace_add('write',restart)
+  buttons=tk.Frame(wrap,bg=PANEL);buttons.pack(anchor='w',pady=15)
+  self.btn(buttons,'YES',lambda:answer('YES')).pack(side='left',padx=5)
+  self.btn(buttons,'NO',lambda:answer('NO')).pack(side='left',padx=5)
+  self.btn(buttons,'Restart',restart).pack(side='left',padx=5)
+  self.btn(buttons,'Edit Wizard Flow',self.edit_wizard_flow).pack(side='left',padx=5)
+  self.btn(wrap,'Save as Knowledge Record',lambda:self.edit_record(machine=machine.get(),title=issue.get(),symptoms='; '.join(q+' = '+a for q,a in state['answers']))).pack(anchor='w',pady=6)
+  render()
  def knowledge(self):
   self.heading('Knowledge library','Select an article to preview it instantly. Editing is a separate action.')
   tools=tk.Frame(self.main,bg=BG);tools.pack(fill='x',padx=28,pady=(2,10))
@@ -389,6 +413,8 @@ class App:
     for heading,key in [('SYMPTOMS','symptoms'),('RECOMMENDED SOLUTION','solution')]:
      preview.insert('end',heading+'\n','section')
      preview.insert('end',(r.get(key,'').strip() or 'No information recorded.')+'\n\n','content')
+    preview.insert('end','ATTACHMENTS (double-click filename to open)\n','section')
+    for name in self.load_attachments().get(str(r.get('id','')),[]):preview.insert('end',name+'\n','content')
    preview.configure(state='disabled')
   def fill(*_):
    previous=tree.selection()
@@ -400,6 +426,12 @@ class App:
    if previous and tree.exists(previous[0]):tree.selection_set(previous[0])
    elif tree.get_children():tree.selection_set(tree.get_children()[0])
    update_preview()
+  def preview_open(event):
+   idx=selected()
+   if idx is None:return
+   line=preview.get('insert linestart','insert lineend').strip()
+   if line in self.load_attachments().get(str(self.rows[idx].get('id','')),[]):self.open_attachment(line)
+  preview.bind('<Double-Button-1>',preview_open)
   tree.bind('<<TreeviewSelect>>',update_preview)
   tree.bind('<Double-1>',lambda event:update_preview())
   query.trace_add('write',fill)
@@ -412,6 +444,7 @@ class App:
    idx=selected()
    if idx is not None and messagebox.askyesno('Delete article','Delete selected record?'):
     self.rows.pop(idx);self.dirty=True;self.show('Knowledge Base')
+  self.btn(actions,'+ Attachment',lambda:self.add_attachment(self.rows[selected()].get('id','')) if selected() is not None else None).pack(side='left',padx=5)
   self.btn(actions,'✎  Edit Selected Article',edit).pack(side='left',padx=(0,8))
   self.btn(actions,'Delete Selected',delete).pack(side='left')
   self.label(actions,'Click = preview   •   Edit button = modify record',9,MUTED).pack(side='right')
