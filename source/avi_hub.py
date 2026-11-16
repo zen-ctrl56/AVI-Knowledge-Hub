@@ -1,8 +1,11 @@
-import csv, json, os, sys, shutil, tempfile, tkinter as tk
+import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac
 from pathlib import Path
 from datetime import datetime
 from tkinter import ttk, messagebox, filedialog
 
+EDITOR_USER='ZENTREK'
+DEFAULT_EDITOR_PASSWORD='Zentrek'
+OWNER_PASSKEY='ZEN'
 FIELDS=['id','title','category','machine','symptoms','solution']
 BASE=Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent.parent
 DEFAULT=BASE/'Database'/'AVI_Database.csv'
@@ -18,7 +21,8 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.0.1');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.1 Preview');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.machines=[];self.notes=[];self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
@@ -39,10 +43,78 @@ class App:
   self.btn(self.sidebar,'↻  Reconnect',self.reconnect).pack(fill='x',padx=13,pady=5)
   self.btn(self.sidebar,'▤  Open Other CSV',self.open_csv).pack(fill='x',padx=13,pady=5)
   self.btn(self.sidebar,'↓  Save Database',self.save).pack(fill='x',padx=13,pady=5)
+  self.auth_button=self.btn(self.sidebar,'🔒  Unlock Editor',self.toggle_editor);self.auth_button.pack(fill='x',padx=13,pady=5)
+  self.btn(self.sidebar,'⚿  Change Editor Password',self.change_editor_password).pack(fill='x',padx=13,pady=5)
   self.status=tk.Label(self.sidebar,text='',bg=SIDEBAR,fg=MUTED,wraplength=206,justify='left',font=('Segoe UI',9));self.status.pack(side='bottom',fill='x',padx=19,pady=24)
   self.main=tk.Frame(root,bg=BG);self.main.pack(side='left',fill='both',expand=True)
   self.root.protocol('WM_DELETE_WINDOW',self.close)
   self.reconnect()
+ def hash_secret(self,value):
+  return hashlib.sha256(value.encode('utf-8')).hexdigest()
+ def password_file(self):
+  return BASE/'Database'/'ZENTREK_Editor.json'
+ def load_editor_password(self):
+  try:
+   p=self.password_file()
+   if p.exists():
+    data=json.loads(p.read_text(encoding='utf-8'))
+    value=data.get('password_sha256','')
+    if isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value):
+     self.editor_password_hash=value
+  except (OSError,ValueError,TypeError):
+   pass
+ def toggle_editor(self):
+  if self.editor_unlocked:
+   self.editor_unlocked=False;self.edit_floor=False
+   self.auth_button.configure(text='🔒  Unlock Editor')
+   self.show(self.view);return
+  win=tk.Toplevel(self.root);win.title('ZENTREK / Editor Login');win.geometry('400x260');win.configure(bg=BG);win.transient(self.root);win.grab_set()
+  self.label(win,'EDITOR AUTHENTICATION',14,AMBER,True).pack(anchor='w',padx=22,pady=(20,14))
+  self.label(win,'USERNAME',10,MUTED).pack(anchor='w',padx=22)
+  user=tk.Entry(win,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat');user.pack(fill='x',padx=22,ipady=7);user.insert(0,EDITOR_USER)
+  self.label(win,'PASSWORD',10,MUTED).pack(anchor='w',padx=22,pady=(10,0))
+  password=tk.Entry(win,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',show='*');password.pack(fill='x',padx=22,ipady=7);password.focus_set()
+  def login(event=None):
+   if hmac.compare_digest(user.get(),EDITOR_USER) and hmac.compare_digest(self.hash_secret(password.get()),self.editor_password_hash):
+    self.editor_unlocked=True;self.auth_button.configure(text='🔓  Lock Editor');win.destroy();self.show(self.view)
+   else:
+    password.delete(0,'end');messagebox.showerror('Access denied','Incorrect editor credentials.',parent=win)
+  password.bind('<Return>',login)
+  self.btn(win,'Unlock Editor',login).pack(anchor='e',padx=22,pady=14)
+ def require_editor(self):
+  if self.editor_unlocked:return True
+  messagebox.showwarning('Viewer Mode','Unlock Editor Mode before making changes.')
+  return False
+ def change_editor_password(self):
+  win=tk.Toplevel(self.root);win.title('ZENTREK / Change Editor Password');win.geometry('420x305');win.configure(bg=BG);win.transient(self.root);win.grab_set()
+  self.label(win,'OWNER AUTHORIZATION REQUIRED',13,AMBER,True).pack(anchor='w',padx=20,pady=(20,12))
+  fields=[]
+  for label in ('OWNER PASSKEY','NEW EDITOR PASSWORD','CONFIRM NEW PASSWORD'):
+   self.label(win,label,10,MUTED).pack(anchor='w',padx=20,pady=(6,3))
+   e=tk.Entry(win,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',show='*')
+   e.pack(fill='x',padx=20,ipady=6);fields.append(e)
+  def commit():
+   key,new,confirm=(e.get() for e in fields)
+   if not hmac.compare_digest(key,OWNER_PASSKEY):
+    messagebox.showerror('Denied','Invalid owner passkey.',parent=win);return
+   if len(new)<8 or new!=confirm:
+    messagebox.showerror('Invalid password','Password must contain at least 8 characters and both entries must match.',parent=win);return
+   path=self.password_file()
+   try:
+    path.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix='.zentrek_auth_',suffix='.json',dir=str(path.parent))
+    try:
+     with os.fdopen(fd,'w',encoding='utf-8') as out:json.dump({'password_sha256':self.hash_secret(new)},out)
+     os.replace(tmp,path)
+    finally:
+     if os.path.exists(tmp):os.unlink(tmp)
+   except OSError as exc:
+    messagebox.showerror('Password not saved',str(exc),parent=win);return
+   self.editor_password_hash=self.hash_secret(new);self.editor_unlocked=False
+   self.auth_button.configure(text='🔒  Unlock Editor')
+   win.destroy();self.show(self.view)
+   messagebox.showinfo('Password updated','Editor password changed. Log in again with the new password.')
+  self.btn(win,'Authorize & Change Password',commit).pack(anchor='e',padx=20,pady=16)
  def btn(self,parent,label,command):
   return tk.Button(parent,text=label,command=command,bg='#202c3c',fg=TEXT,activebackground='#3a485b',activeforeground=AMBER,relief='flat',anchor='w',cursor='hand2',padx=17,pady=12,font=('Segoe UI',10,'bold'),bd=0,highlightthickness=0)
  def label(self,parent,text,size=11,color=TEXT,bold=False):
@@ -79,6 +151,7 @@ class App:
    self.machines=self.default_machines();self.notes=[]
    messagebox.showwarning('Layout load issue',f'Using default floor plan. Existing file was not overwritten.\n{e}')
  def save_layout(self,quiet=False):
+  if not self.require_editor():return
   path=self.layout_file();lock=Path(str(path)+'.lock')
   try:
    path.parent.mkdir(parents=True,exist_ok=True)
@@ -126,6 +199,7 @@ class App:
    self.label(card,note.get('body',''),10,TEXT).pack(anchor='w',pady=(4,0))
   self.label(self.main,'Statuses and notes are manually maintained, not live telemetry.',9,MUTED).pack(anchor='w',padx=30,pady=(8,12))
  def add_note(self,index=None):
+  if not self.require_editor():return
   old=self.notes[index] if index is not None else {}
   win=tk.Toplevel(self.root);win.title('Immediate Attention Pin');win.geometry('490x370');win.configure(bg=BG);win.transient(self.root);win.grab_set()
   self.label(win,'PIN TITLE',11,AMBER,True).pack(anchor='w',padx=20,pady=(20,6))
@@ -140,6 +214,7 @@ class App:
    self.layout_dirty=True;win.destroy();self.save_layout(quiet=True);self.show('Dashboard')
   self.btn(win,'Save Pin',commit).pack(anchor='e',padx=20,pady=12)
  def delete_note(self,index):
+  if not self.require_editor():return
   if messagebox.askyesno('Remove pin','Remove this immediate-attention note?'):
    self.notes.pop(index);self.layout_dirty=True;self.save_layout(quiet=True);self.show('Dashboard')
  def registry(self):
@@ -165,6 +240,7 @@ class App:
  def machine_by_id(self,mid):
   return next((m for m in self.machines if m.get('id')==mid),None)
  def toggle_floor(self):
+  if not self.require_editor():return
   self.edit_floor=not self.edit_floor;self.show('Machine Registry')
  def draw_floor(self):
   if not hasattr(self,'floor') or not self.floor.winfo_exists():return
@@ -196,12 +272,14 @@ class App:
   if not moved:self.edit_machine(mid)
   else:self.show('Machine Registry')
  def add_machine(self):
+  if not self.require_editor():return
   ids={m['id'] for m in self.machines};n=1
   while f'AVI-{n:02d}' in ids:n+=1
   mid=f'AVI-{n:02d}'
   self.machines.append({'id':mid,'name':f'AVI {n:02d}','status':'Idle','symbol':'▣','x':.5,'y':.5})
   self.machine=mid;self.layout_dirty=True;self.edit_machine(mid)
  def edit_machine(self,mid):
+  if not self.require_editor():return
   m=self.machine_by_id(mid)
   if not m:return
   win=tk.Toplevel(self.root);win.title('Machine Properties');win.geometry('475x455');win.configure(bg=BG);win.transient(self.root);win.grab_set()
@@ -300,6 +378,7 @@ class App:
    idx=selected()
    if idx is not None:self.edit_record(index=idx)
   def delete():
+   if not self.require_editor():return
    idx=selected()
    if idx is not None and messagebox.askyesno('Delete article','Delete selected record?'):
     self.rows.pop(idx);self.dirty=True;self.show('Knowledge Base')
@@ -308,6 +387,7 @@ class App:
   self.label(actions,'Click = preview   •   Edit button = modify record',9,MUTED).pack(side='right')
   fill()
  def edit_record(self,index=None,machine='',title='',symptoms=''):
+  if not self.require_editor():return
   old=self.rows[index] if index is not None else {}
   win=tk.Toplevel(self.root);win.title('Knowledge Record');win.geometry('650x610');win.configure(bg=BG);win.transient(self.root);win.grab_set()
   fields={}
@@ -343,6 +423,7 @@ class App:
   p=filedialog.askopenfilename(filetypes=[('CSV database','*.csv')])
   if p:self.load(p)
  def save(self):
+  if not self.require_editor():return
   if not self.path.exists():
    messagebox.showwarning('Database missing','Create an approved CSV database at:\n'+str(self.path));return
   lock=Path(str(self.path)+'.lock')
