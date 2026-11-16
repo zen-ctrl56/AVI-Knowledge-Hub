@@ -1,7 +1,7 @@
-import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac
+import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac, uuid, math
 from pathlib import Path
 from datetime import datetime
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, simpledialog
 
 EDITOR_USER='ZENTREK'
 DEFAULT_EDITOR_PASSWORD='Zentrek'
@@ -24,7 +24,7 @@ class App:
   self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.1 Preview');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
-  self.machines=[];self.notes=[];self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
+  self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
   self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=37,borderwidth=0,font=('Segoe UI',10))
   self.style.configure('Treeview.Heading',background='#263345',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
@@ -143,12 +143,12 @@ class App:
    if self.layout_path.exists():
     with open(self.layout_path,encoding='utf-8') as f:data=json.load(f)
     self.machines=data.get('machines',self.default_machines())
-    self.notes=data.get('notes',[])
+    self.notes=data.get('notes',[]);self.shapes=data.get('shapes',[])
     if not isinstance(self.machines,list) or not isinstance(self.notes,list):raise ValueError('Invalid layout data')
-   else:self.machines=self.default_machines();self.notes=[]
+   else:self.machines=self.default_machines();self.notes=[];self.shapes=[]
    self.layout_dirty=False
   except Exception as e:
-   self.machines=self.default_machines();self.notes=[]
+   self.machines=self.default_machines();self.notes=[];self.shapes=[]
    messagebox.showwarning('Layout load issue',f'Using default floor plan. Existing file was not overwritten.\n{e}')
  def save_layout(self,quiet=False):
   if not self.require_editor():return
@@ -165,7 +165,7 @@ class App:
    fd,tmp=tempfile.mkstemp(prefix='.zentrek_',suffix='.json',dir=str(path.parent))
    try:
     with os.fdopen(fd,'w',encoding='utf-8') as out:
-     json.dump({'version':1,'machines':self.machines,'notes':self.notes},out,ensure_ascii=False,indent=2)
+     json.dump({'version':1,'machines':self.machines,'notes':self.notes,'shapes':self.shapes},out,ensure_ascii=False,indent=2)
     os.replace(tmp,path)
    finally:
     if os.path.exists(tmp):os.unlink(tmp)
@@ -222,6 +222,12 @@ class App:
   controls=tk.Frame(self.main,bg=BG);controls.pack(fill='x',padx=30,pady=(0,9))
   self.btn(controls,'✓ Finish Editing' if self.edit_floor else '✥ Edit Layout',self.toggle_floor).pack(side='left',padx=(0,7))
   self.btn(controls,'+ Add Machine',self.add_machine).pack(side='left',padx=7)
+  self.btn(controls,'◈ '+self.floor_mode+' View',self.switch_floor_mode).pack(side='left',padx=5)
+  self.btn(controls,'+ Zone',lambda:self.add_floor_shape('zone')).pack(side='left',padx=4)
+  self.btn(controls,'+ Label',lambda:self.add_floor_shape('label')).pack(side='left',padx=4)
+  self.btn(controls,'+ Wall',lambda:self.add_floor_shape('wall')).pack(side='left',padx=4)
+  self.btn(controls,'Zoom +',lambda:self.zoom_floor(1.2)).pack(side='left',padx=2)
+  self.btn(controls,'Zoom -',lambda:self.zoom_floor(1/1.2)).pack(side='left',padx=2)
   self.btn(controls,'Save Floor Plan',self.save_layout).pack(side='right')
   self.label(self.main,'● Running     ● Down     ● Maintenance     ● Idle     ● Attention    |    Colors indicate manually set status',9,MUTED).pack(anchor='w',padx=30,pady=(0,7))
   self.floor=tk.Canvas(self.main,bg='#121d2b',highlightthickness=1,highlightbackground=EDGE,height=420,cursor='crosshair' if self.edit_floor else 'arrow')
@@ -242,34 +248,58 @@ class App:
  def toggle_floor(self):
   if not self.require_editor():return
   self.edit_floor=not self.edit_floor;self.show('Machine Registry')
+ def switch_floor_mode(self):
+  self.floor_mode='Visual' if self.floor_mode=='Schematic' else 'Schematic'
+  self.show('Machine Registry')
+ def zoom_floor(self,factor):
+  self.floor_zoom=max(.7,min(1.8,self.floor_zoom*factor));self.draw_floor()
+ def add_floor_shape(self,kind):
+  if not self.require_editor():return
+  label=simpledialog.askstring('Floor object','Enter a label for the '+kind+':',parent=self.root)
+  if label is None:return
+  self.shapes.append({'id':uuid.uuid4().hex[:12],'type':kind,'label':label.strip(),'x':.5,'y':.5})
+  self.layout_dirty=True;self.edit_floor=True;self.show('Machine Registry')
  def draw_floor(self):
   if not hasattr(self,'floor') or not self.floor.winfo_exists():return
   c=self.floor;c.delete('all');w=max(c.winfo_width(),550);h=max(c.winfo_height(),320)
   for x in range(0,w,40):c.create_line(x,0,x,h,fill='#1c2b3b')
   for y in range(0,h,40):c.create_line(0,y,w,y,fill='#1c2b3b')
   c.create_text(17,15,text='PRODUCTION FLOOR  /  CUSTOM LAYOUT',fill='#72869b',anchor='nw',font=('Segoe UI',10,'bold'))
+  for shape in self.shapes:
+   try:
+    x=float(shape.get('x',.5))*w;y=float(shape.get('y',.5))*h;kind=shape.get('type');label=str(shape.get('label',''))[:45]
+    if kind=='zone':c.create_rectangle(x-75,y-34,x+75,y+34,fill='#202f40',outline='#63809c',dash=(5,4),tags=('shape',shape['id']));c.create_text(x,y,text=label,fill='#a5b9ce',tags=('shape',shape['id']))
+    elif kind=='wall':c.create_line(x-70,y,x+70,y,fill='#71859a',width=7,tags=('shape',shape['id']))
+    else:c.create_text(x,y,text=label,fill=AMBER,font=('Segoe UI',11,'bold'),tags=('shape',shape['id']))
+   except (ValueError,TypeError,KeyError):continue
   for m in self.machines:
-   x=max(35,min(w-35,float(m.get('x',.5))*w));y=max(45,min(h-28,float(m.get('y',.5))*h))
+   x=max(35,min(w-35,float(m.get('x',.5))*w*self.floor_zoom));y=max(45,min(h-28,float(m.get('y',.5))*h*self.floor_zoom))
    mid=m['id'];color=STATUS_COLORS.get(m.get('status'),MUTED);selected=mid==self.machine
-   c.create_rectangle(x-45,y-23,x+45,y+26,fill='#334354' if selected else '#1c2b3b',outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
+   c.create_rectangle(x-45,y-23,x+45,y+26,fill=('#455466' if self.floor_mode=='Visual' else '#334354') if selected else ('#304154' if self.floor_mode=='Visual' else '#1c2b3b'),outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
+   if self.floor_mode=='Visual':c.create_rectangle(x-34,y-17,x+34,y-3,fill='#647b91',outline='#a3b6c8',tags=('machine',mid))
    c.create_text(x,y-7,text=str(m.get('symbol','▣')),fill=color,font=('Segoe UI Symbol',17,'bold'),tags=('machine',mid))
    c.create_text(x,y+13,text=str(m.get('name',mid))[:17],fill=TEXT,font=('Segoe UI',9,'bold'),tags=('machine',mid))
   if self.edit_floor:c.create_text(w-12,15,text='EDIT MODE  •  DRAG TO MOVE',anchor='ne',fill=AMBER,font=('Segoe UI',9,'bold'))
  def floor_press(self,event):
-  tags=self.floor.gettags('current');mid=tags[1] if len(tags)>1 and tags[0]=='machine' else None
+  tags=self.floor.gettags('current');mid=tags[1] if len(tags)>1 and tags[0] in ('machine','shape') else None
   if not mid:return
+  if tags[0]=='shape':
+   self.drag={'id':mid,'kind':'shape','moved':False};return
   self.machine=mid;self.drag={'id':mid,'moved':False,'x':event.x,'y':event.y};self.draw_floor()
  def floor_drag(self,event):
   if not self.drag or not self.edit_floor:return
-  m=self.machine_by_id(self.drag['id'])
+  m=next((v for v in self.shapes if v.get('id')==self.drag['id']),None) if self.drag.get('kind')=='shape' else self.machine_by_id(self.drag['id'])
   if not m:return
   w=max(self.floor.winfo_width(),1);h=max(self.floor.winfo_height(),1)
-  m['x']=max(.06,min(.94,event.x/w));m['y']=max(.12,min(.92,event.y/h))
+  m['x']=max(.06,min(.94,event.x/(w*self.floor_zoom)));m['y']=max(.12,min(.92,event.y/(h*self.floor_zoom)))
   self.drag['moved']=True;self.layout_dirty=True;self.draw_floor()
  def floor_release(self,event):
   if not self.drag:return
   moved=self.drag['moved'];mid=self.drag['id'];self.drag=None
-  if not moved:self.edit_machine(mid)
+  if not moved and self.drag is None and any(v.get('id')==mid for v in self.shapes):
+   if self.edit_floor and messagebox.askyesno('Remove shape','Remove selected floor shape?'):
+    self.shapes=[v for v in self.shapes if v.get('id')!=mid];self.layout_dirty=True;self.show('Machine Registry')
+  elif not moved:self.edit_machine(mid)
   else:self.show('Machine Registry')
  def add_machine(self):
   if not self.require_editor():return
