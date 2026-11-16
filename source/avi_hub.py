@@ -18,7 +18,7 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.0.1');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.machines=[];self.notes=[];self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
@@ -241,22 +241,61 @@ class App:
    self.edit_record(machine=machine.get(),title=issue.get(),symptoms=output.get('1.0','end').strip())
   self.btn(wrap,'Save as Knowledge Record',add).pack(anchor='w',pady=6)
  def knowledge(self):
-  self.heading('KNOWLEDGE BASE','Search, document and update approved troubleshooting procedures')
-  tools=tk.Frame(self.main,bg=BG);tools.pack(fill='x',padx=28,pady=5)
-  query=tk.StringVar();entry=tk.Entry(tools,textvariable=query,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',font=('Segoe UI',12));entry.pack(side='left',fill='x',expand=True,ipady=10,padx=(0,12))
+  self.heading('Knowledge library','Select an article to preview it instantly. Editing is a separate action.')
+  tools=tk.Frame(self.main,bg=BG);tools.pack(fill='x',padx=28,pady=(2,10))
+  query=tk.StringVar()
+  entry=tk.Entry(tools,textvariable=query,bg=PANEL,fg=TEXT,insertbackground=TEXT,relief='flat',font=('Segoe UI',12))
+  entry.pack(side='left',fill='x',expand=True,ipady=10,padx=(0,12))
   self.btn(tools,'+ New Article',lambda:self.edit_record()).pack(side='left')
-  tree=ttk.Treeview(self.main,columns=('id','title','machine','category'),show='headings',selectmode='browse')
-  for col,w in [('id',75),('title',340),('machine',115),('category',150)]:tree.heading(col,text=col.upper());tree.column(col,width=w,stretch=col=='title')
-  tree.pack(fill='both',expand=True,padx=28,pady=16)
-  def fill(*_):
-   for item in tree.get_children():tree.delete(item)
-   q=query.get().lower()
-   for idx,r in enumerate(self.rows):
-    if q in ' '.join(str(v) for v in r.values()).lower():tree.insert('', 'end',iid=str(idx),values=[r.get(c,'') for c in ('id','title','machine','category')])
-  query.trace_add('write',fill);fill()
+  body=tk.Frame(self.main,bg=BG);body.pack(fill='both',expand=True,padx=28,pady=(0,12))
+  left=tk.Frame(body,bg=BG);left.pack(side='left',fill='both',expand=True,padx=(0,8))
+  right=tk.Frame(body,bg=PANEL,highlightbackground=EDGE,highlightthickness=1,width=370)
+  right.pack(side='right',fill='both',expand=True,padx=(8,0))
+  tree=ttk.Treeview(left,columns=('id','title','machine','category'),show='headings',selectmode='browse')
+  for col,w in [('id',55),('title',240),('machine',90),('category',105)]:
+   tree.heading(col,text=col.upper());tree.column(col,width=w,stretch=col=='title')
+  scroll=ttk.Scrollbar(left,orient='vertical',command=tree.yview);tree.configure(yscrollcommand=scroll.set)
+  scroll.pack(side='right',fill='y');tree.pack(side='left',fill='both',expand=True)
+  self.label(right,'ARTICLE PREVIEW',10,AMBER,True).pack(anchor='w',padx=20,pady=(19,9))
+  preview_title=self.label(right,'Select an article',17,TEXT,True);preview_title.pack(anchor='w',padx=20,pady=(0,10))
+  meta=self.label(right,'Select a row to view details without editing.',10,MUTED);meta.pack(anchor='w',padx=20,pady=(0,14))
+  preview=tk.Text(right,bg=PANEL,fg=TEXT,wrap='word',relief='flat',font=('Segoe UI',10),padx=20,pady=10,highlightthickness=0,cursor='arrow')
+  preview.pack(fill='both',expand=True)
+  preview.tag_configure('section',foreground=AMBER,font=('Segoe UI',10,'bold'),spacing1=12,spacing3=7)
+  preview.tag_configure('content',foreground=TEXT,spacing3=8)
+  preview.configure(state='disabled')
   def selected():
-   s=tree.selection();return int(s[0]) if s else None
-  actions=tk.Frame(self.main,bg=BG);actions.pack(fill='x',padx=28,pady=(0,20))
+   selection=tree.selection()
+   return int(selection[0]) if selection else None
+  def update_preview(*_):
+   idx=selected()
+   preview.configure(state='normal');preview.delete('1.0','end')
+   if idx is None or idx>=len(self.rows):
+    preview_title.configure(text='Select an article')
+    meta.configure(text='Click an article in the list to preview it.')
+    preview.insert('end','No article selected.\n\nSearch the knowledge library, then select a row to read its symptoms and solution.')
+   else:
+    r=self.rows[idx]
+    preview_title.configure(text=r.get('title','Untitled')[:70])
+    meta.configure(text='ID: '+r.get('id','—')+'   •   '+r.get('machine','Any machine')+'   •   '+r.get('category','Uncategorized'))
+    for heading,key in [('SYMPTOMS','symptoms'),('RECOMMENDED SOLUTION','solution')]:
+     preview.insert('end',heading+'\n','section')
+     preview.insert('end',(r.get(key,'').strip() or 'No information recorded.')+'\n\n','content')
+   preview.configure(state='disabled')
+  def fill(*_):
+   previous=tree.selection()
+   for item in tree.get_children():tree.delete(item)
+   q=query.get().strip().lower()
+   for idx,r in enumerate(self.rows):
+    if q in ' '.join(str(v) for v in r.values()).lower():
+     tree.insert('','end',iid=str(idx),values=[r.get(c,'') for c in ('id','title','machine','category')])
+   if previous and tree.exists(previous[0]):tree.selection_set(previous[0])
+   elif tree.get_children():tree.selection_set(tree.get_children()[0])
+   update_preview()
+  tree.bind('<<TreeviewSelect>>',update_preview)
+  tree.bind('<Double-1>',lambda event:update_preview())
+  query.trace_add('write',fill)
+  actions=tk.Frame(self.main,bg=BG);actions.pack(fill='x',padx=28,pady=(0,17))
   def edit():
    idx=selected()
    if idx is not None:self.edit_record(index=idx)
@@ -264,8 +303,10 @@ class App:
    idx=selected()
    if idx is not None and messagebox.askyesno('Delete article','Delete selected record?'):
     self.rows.pop(idx);self.dirty=True;self.show('Knowledge Base')
-  self.btn(actions,'Edit Selected',edit).pack(side='left',padx=4)
-  self.btn(actions,'Delete Selected',delete).pack(side='left',padx=4)
+  self.btn(actions,'✎  Edit Selected Article',edit).pack(side='left',padx=(0,8))
+  self.btn(actions,'Delete Selected',delete).pack(side='left')
+  self.label(actions,'Click = preview   •   Edit button = modify record',9,MUTED).pack(side='right')
+  fill()
  def edit_record(self,index=None,machine='',title='',symptoms=''):
   old=self.rows[index] if index is not None else {}
   win=tk.Toplevel(self.root);win.title('Knowledge Record');win.geometry('650x610');win.configure(bg=BG);win.transient(self.root);win.grab_set()
