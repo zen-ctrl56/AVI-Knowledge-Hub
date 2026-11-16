@@ -372,6 +372,74 @@ class App:
   self.btn(buttons,'Edit Wizard Flow',self.edit_wizard_flow).pack(side='left',padx=5)
   self.btn(wrap,'Save as Knowledge Record',lambda:self.edit_record(machine=machine.get(),title=issue.get(),symptoms='; '.join(q+' = '+a for q,a in state['answers']))).pack(anchor='w',pady=6)
   render()
+ def attachments_file(self):return self.path.parent/'Attachments.json'
+ def load_attachments(self):
+  try:
+   p=self.attachments_file();return json.loads(p.read_text(encoding='utf-8')) if p.exists() else {}
+  except (OSError,ValueError):return {}
+ def atomic_json(self,path,data):
+  path.parent.mkdir(parents=True,exist_ok=True)
+  fd,tmp=tempfile.mkstemp(prefix='.zentrek_',suffix='.json',dir=str(path.parent))
+  try:
+   with os.fdopen(fd,'w',encoding='utf-8') as out:json.dump(data,out,indent=2,ensure_ascii=False)
+   os.replace(tmp,path)
+  finally:
+   if os.path.exists(tmp):os.unlink(tmp)
+ def add_attachment(self,article_id):
+  if not self.require_editor():return
+  src=filedialog.askopenfilename(filetypes=[('Approved media','*.png *.jpg *.jpeg *.gif *.pdf')])
+  if not src:return
+  source=Path(src)
+  if source.suffix.lower() not in ('.png','.jpg','.jpeg','.gif','.pdf') or source.stat().st_size>15*1024*1024:
+   messagebox.showerror('Attachment rejected','Use PNG, JPG, GIF or PDF up to 15 MB.');return
+  directory=self.path.parent.parent/'Attachments'
+  try:
+   directory.mkdir(parents=True,exist_ok=True)
+   name=uuid.uuid4().hex+source.suffix.lower()
+   shutil.copy2(source,directory/name)
+   data=self.load_attachments();data.setdefault(str(article_id),[]).append(name)
+   self.atomic_json(self.attachments_file(),data)
+   self.show('Knowledge Base')
+  except OSError as exc:messagebox.showerror('Attachment error',str(exc))
+ def open_attachment(self,name):
+  if Path(name).name!=name:return
+  path=self.path.parent.parent/'Attachments'/name
+  if not path.is_file():messagebox.showwarning('Missing attachment','Attachment not found.');return
+  if path.suffix.lower()=='.pdf':
+   if sys.platform=='win32':os.startfile(str(path))
+   else:messagebox.showinfo('PDF',str(path))
+   return
+  if path.suffix.lower() not in ('.png','.jpg','.jpeg','.gif'):return
+  win=tk.Toplevel(self.root);win.title('ZENTREK / Image Preview');win.geometry('850x650');win.configure(bg=BG)
+  try:
+   img=tk.PhotoImage(file=str(path));win.image=img
+   canvas=tk.Canvas(win,bg=BG,highlightthickness=0);canvas.pack(fill='both',expand=True)
+   canvas.create_image(425,310,image=img)
+  except tk.TclError:
+   messagebox.showwarning('Preview unavailable','Image format not supported by this build.',parent=win);win.destroy()
+ def wizard_file(self):return self.path.parent/'Wizard_Flows.json'
+ def load_wizard_flows(self):
+  try:
+   p=self.wizard_file()
+   if p.exists():
+    data=json.loads(p.read_text(encoding='utf-8'))
+    if isinstance(data,dict):return data
+  except (OSError,ValueError):pass
+  return {k:[{'question':q,'guidance':g} for q,g in values] for k,values in ISSUES.items()}
+ def edit_wizard_flow(self):
+  if not self.require_editor():return
+  title=simpledialog.askstring('Wizard editor','Symptom / flow name:',parent=self.root)
+  if not title:return
+  question=simpledialog.askstring('Wizard editor','Diagnostic question:',parent=self.root)
+  if not question:return
+  yes=simpledialog.askstring('YES outcome','Approved guidance when YES:',parent=self.root)
+  if yes is None:return
+  no=simpledialog.askstring('NO outcome','Approved guidance when NO:',parent=self.root)
+  if no is None:return
+  flows=self.load_wizard_flows()
+  flows[title.strip()]=[{'question':question.strip(),'yes':yes.strip(),'no':no.strip()}]
+  try:self.atomic_json(self.wizard_file(),flows);self.show('Troubleshooting Wizard')
+  except OSError as exc:messagebox.showerror('Wizard save failed',str(exc))
  def knowledge(self):
   self.heading('Knowledge library','Select an article to preview it instantly. Editing is a separate action.')
   tools=tk.Frame(self.main,bg=BG);tools.pack(fill='x',padx=28,pady=(2,10))
