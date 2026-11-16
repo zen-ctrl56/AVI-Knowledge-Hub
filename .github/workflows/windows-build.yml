@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: 'Publish public GitHub Release v4.0.1 after successful build'
+        description: 'Publish public GitHub Release v4.1.0 after successful build'
         type: boolean
         required: true
         default: false
@@ -30,7 +30,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force release/Database | Out-Null
           Copy-Item dist/AVI_Knowledge_Hub.exe release/
-          Copy-Item database/AVI_Database.csv release/Database/AVI_Database_TEMPLATE.csv
+          Set-Content -Path release/Database/AVI_Database_TEMPLATE.csv -Value 'id,title,category,machine,symptoms,solution'
           Compress-Archive -Path release/* -DestinationPath AVI_Knowledge_Hub_Windows.zip -Force
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -47,6 +47,6 @@ jobs:
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $tag = $env:GITHUB_REF.Substring(10)
           } else {
-            $tag = 'v4.0.1'
+            $tag = 'v4.1.0'
           }
           gh release create $tag AVI_Knowledge_Hub_Windows.zip --target $env:GITHUB_SHA --title "ZENTREK $tag - AVI Knowledge Hub Windows" --notes "Portable Windows EXE with editable production floor map, drag-and-drop machine symbols, manual machine statuses, immediate-attention pinboard, troubleshooting wizard and shared-network CSV support. Floor layout and pins save to Database/ZENTREK_Floorplan.json. Extract and place your existing populated CSV at Database/AVI_Database.csv beside the EXE. The included CSV is an EMPTY template only. Production use requires site IT approval and testing." --latest
