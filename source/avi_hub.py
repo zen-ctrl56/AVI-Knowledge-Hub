@@ -1,6 +1,6 @@
 import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac, uuid, math
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from tkinter import ttk, messagebox, filedialog, simpledialog
 
 EDITOR_USER='ZENTREK'
@@ -24,7 +24,7 @@ class App:
   self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.1 Preview');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
-  self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
+  self.heartbeat_cache={};self.refresh_job=None;self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
   self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=37,borderwidth=0,font=('Segoe UI',10))
   self.style.configure('Treeview.Heading',background='#263345',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
@@ -127,12 +127,15 @@ class App:
   self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=30,pady=(0,20))
   tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=30,pady=(0,14))
  def show(self,view):
+  if self.refresh_job is not None:
+   self.root.after_cancel(self.refresh_job);self.refresh_job=None
   self.view=view;self.clear()
   for name,button in self.nav_buttons.items():button.configure(bg='#3a3028' if name==view else '#202c3c',fg=AMBER if name==view else TEXT)
   if view=='Dashboard':self.dashboard()
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
   else:self.knowledge()
+  if view=='Machine Registry':self.schedule_floor_refresh()
  def layout_file(self):
   return self.path.parent/'ZENTREK_Floorplan.json'
  def default_machines(self):
@@ -217,8 +220,58 @@ class App:
   if not self.require_editor():return
   if messagebox.askyesno('Remove pin','Remove this immediate-attention note?'):
    self.notes.pop(index);self.layout_dirty=True;self.save_layout(quiet=True);self.show('Dashboard')
+ def read_heartbeat(self,mid):
+  if not mid or Path(mid).name!=mid:return {'state':'Unknown','reason':'Invalid machine ID'}
+  path=self.path.parent/'Heartbeats'/(mid+'.json')
+  try:
+   if path.stat().st_size>8192:raise ValueError('Heartbeat too large')
+   data=json.loads(path.read_text(encoding='utf-8'))
+   timestamp=datetime.fromisoformat(str(data['timestamp_utc']).replace('Z','+00:00'))
+   if timestamp.tzinfo is None:raise ValueError('Timestamp missing timezone')
+   age=(datetime.now(timezone.utc)-timestamp.astimezone(timezone.utc)).total_seconds()
+   if age< -120 or age>120:return {'state':'Unknown','reason':'Heartbeat stale or clock mismatch'}
+   running=data.get('smartvision_running')
+   if not isinstance(running,bool):raise ValueError('Invalid process state')
+   return {'state':'Running' if running else 'Stopped','reason':'Heartbeat '+str(int(age))+'s ago','timestamp':str(data['timestamp_utc'])}
+  except (OSError,ValueError,KeyError,TypeError,UnicodeError) as exc:
+   return {'state':'Unknown','reason':'No valid recent heartbeat'}
+ def schedule_floor_refresh(self):
+  def refresh():
+   self.refresh_job=None
+   if self.view=='Machine Registry':
+    self.draw_floor();self.schedule_floor_refresh()
+  self.refresh_job=self.root.after(15000,refresh)
+ def machine_detail(self,mid):
+  m=self.machine_by_id(mid)
+  if not m:return
+  win=tk.Toplevel(self.root);win.title('ZENTREK / '+str(m.get('name',mid)));win.geometry('730x590');win.configure(bg=BG)
+  state=self.read_heartbeat(mid)
+  self.label(win,str(m.get('name',mid))+' / '+mid,19,AMBER,True).pack(anchor='w',padx=22,pady=(22,8))
+  self.label(win,'SmartVision: '+state['state']+'   •   '+state['reason'],12,TEXT,True).pack(anchor='w',padx=22,pady=(0,9))
+  self.label(win,'Manual floor status: '+str(m.get('status','Idle')),10,MUTED).pack(anchor='w',padx=22,pady=(0,14))
+  self.label(win,'MACHINE KNOWLEDGE',12,AMBER,True).pack(anchor='w',padx=22,pady=(5,8))
+  items=[r for r in self.rows if str(r.get('machine','')).strip().casefold() in (mid.casefold(),str(m.get('name','')).strip().casefold())]
+  listing=tk.Listbox(win,bg=PANEL,fg=TEXT,selectbackground='#394e63',relief='flat',font=('Segoe UI',11))
+  listing.pack(fill='both',expand=True,padx=22,pady=5)
+  for r in items:listing.insert('end',r.get('title','Untitled'))
+  article=tk.Text(win,height=9,bg=PANEL,fg=TEXT,wrap='word',relief='flat',font=('Segoe UI',10));article.pack(fill='both',expand=True,padx=22,pady=8)
+  def show_article(event=None):
+   if not listing.curselection():return
+   r=items[listing.curselection()[0]]
+   article.configure(state='normal');article.delete('1.0','end')
+   article.insert('end','SYMPTOMS\n'+r.get('symptoms','')+'\n\nSOLUTION\n'+r.get('solution',''))
+   article.configure(state='disabled')
+  listing.bind('<<ListboxSelect>>',show_article)
+  if not items:self.label(win,'No linked articles yet. Add articles using this machine ID.',10,MUTED).pack(anchor='w',padx=22)
+  self.btn(win,'Refresh SmartVision Status',lambda:self.refresh_machine_detail(win,mid)).pack(anchor='e',padx=22,pady=10)
+ def refresh_machine_detail(self,win,mid):
+  win.destroy();self.machine_detail(mid)
  def registry(self):
-  self.heading('Production floor planner','Drag machine symbols in Edit Layout mode. Select a machine to rename or update its status.')
+  self.heading('Production floor planner','SmartVision heartbeat monitoring • click a machine to view its knowledge')
+  states=[self.read_heartbeat(m['id'])['state'] for m in self.machines]
+  counts=tk.Frame(self.main,bg=BG);counts.pack(fill='x',padx=30,pady=(0,8))
+  for label,count in [('RUNNING',states.count('Running')),('STOPPED',states.count('Stopped')),('UNKNOWN',states.count('Unknown'))]:
+   self.label(counts,label+': '+str(count),11,AMBER if label=='UNKNOWN' else TEXT,True).pack(side='left',padx=(0,20))
   controls=tk.Frame(self.main,bg=BG);controls.pack(fill='x',padx=30,pady=(0,9))
   self.btn(controls,'✓ Finish Editing' if self.edit_floor else '✥ Edit Layout',self.toggle_floor).pack(side='left',padx=(0,7))
   self.btn(controls,'+ Add Machine',self.add_machine).pack(side='left',padx=7)
@@ -229,7 +282,7 @@ class App:
   self.btn(controls,'Zoom +',lambda:self.zoom_floor(1.2)).pack(side='left',padx=2)
   self.btn(controls,'Zoom -',lambda:self.zoom_floor(1/1.2)).pack(side='left',padx=2)
   self.btn(controls,'Save Floor Plan',self.save_layout).pack(side='right')
-  self.label(self.main,'● Running     ● Down     ● Maintenance     ● Idle     ● Attention    |    Colors indicate manually set status',9,MUTED).pack(anchor='w',padx=30,pady=(0,7))
+  self.label(self.main,'● Green = SmartVision running     ● Red = stopped     ● Grey = no fresh heartbeat     |     Manual status is separate',9,MUTED).pack(anchor='w',padx=30,pady=(0,7))
   self.floor=tk.Canvas(self.main,bg='#121d2b',highlightthickness=1,highlightbackground=EDGE,height=420,cursor='crosshair' if self.edit_floor else 'arrow')
   self.floor.pack(fill='both',expand=True,padx=30,pady=(0,12))
   self.floor.bind('<Configure>',lambda e:self.draw_floor())
@@ -274,11 +327,12 @@ class App:
    except (ValueError,TypeError,KeyError):continue
   for m in self.machines:
    x=max(35,min(w-35,float(m.get('x',.5))*w*self.floor_zoom));y=max(45,min(h-28,float(m.get('y',.5))*h*self.floor_zoom))
-   mid=m['id'];color=STATUS_COLORS.get(m.get('status'),MUTED);selected=mid==self.machine
+   mid=m['id'];heartbeat=self.read_heartbeat(mid);live=heartbeat['state'];color={'Running':'#39c99a','Stopped':'#ff6577','Unknown':'#8193a8'}[live];selected=mid==self.machine
    c.create_rectangle(x-45,y-23,x+45,y+26,fill=('#455466' if self.floor_mode=='Visual' else '#334354') if selected else ('#304154' if self.floor_mode=='Visual' else '#1c2b3b'),outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
    if self.floor_mode=='Visual':c.create_rectangle(x-34,y-17,x+34,y-3,fill='#647b91',outline='#a3b6c8',tags=('machine',mid))
    c.create_text(x,y-7,text=str(m.get('symbol','▣')),fill=color,font=('Segoe UI Symbol',17,'bold'),tags=('machine',mid))
    c.create_text(x,y+13,text=str(m.get('name',mid))[:17],fill=TEXT,font=('Segoe UI',9,'bold'),tags=('machine',mid))
+   c.create_text(x,y+36,text=live,fill=color,font=('Segoe UI',8,'bold'),tags=('machine',mid))
   if self.edit_floor:c.create_text(w-12,15,text='EDIT MODE  •  DRAG TO MOVE',anchor='ne',fill=AMBER,font=('Segoe UI',9,'bold'))
  def floor_press(self,event):
   tags=self.floor.gettags('current');mid=tags[1] if len(tags)>1 and tags[0] in ('machine','shape') else None
@@ -299,7 +353,9 @@ class App:
   if not moved and self.drag is None and any(v.get('id')==mid for v in self.shapes):
    if self.edit_floor and messagebox.askyesno('Remove shape','Remove selected floor shape?'):
     self.shapes=[v for v in self.shapes if v.get('id')!=mid];self.layout_dirty=True;self.show('Machine Registry')
-  elif not moved:self.edit_machine(mid)
+  elif not moved:
+   if self.edit_floor:self.edit_machine(mid)
+   else:self.machine_detail(mid)
   else:self.show('Machine Registry')
  def add_machine(self):
   if not self.require_editor():return
