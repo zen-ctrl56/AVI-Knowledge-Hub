@@ -49,4 +49,8 @@ jobs:
           } else {
             $tag = 'v4.1.0'
           }
+          if (gh release view $tag --json tagName 2>$null) {
+            gh release upload $tag AVI_Knowledge_Hub_Windows.zip --clobber
+            exit $LASTEXITCODE
+          }
           gh release create $tag AVI_Knowledge_Hub_Windows.zip --target $env:GITHUB_SHA --title "ZENTREK $tag - AVI Knowledge Hub Windows" --notes "Portable Windows EXE with editable production floor map, drag-and-drop machine symbols, manual machine statuses, immediate-attention pinboard, troubleshooting wizard and shared-network CSV support. Floor layout and pins save to Database/ZENTREK_Floorplan.json. Extract and place your existing populated CSV at Database/AVI_Database.csv beside the EXE. The included CSV is an EMPTY template only. Production use requires site IT approval and testing." --latest
