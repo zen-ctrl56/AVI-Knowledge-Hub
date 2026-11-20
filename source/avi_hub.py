@@ -1,6 +1,6 @@
-import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac, uuid, math
+import csv, json, os, sys, shutil, tempfile, tkinter as tk, hashlib, hmac, uuid, math, calendar
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from tkinter import ttk, messagebox, filedialog, simpledialog
 
 EDITOR_USER='ZENTREK'
@@ -21,7 +21,7 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.2.2');self.root.geometry('1320x820');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.2.3');self.root.geometry('1320x820');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.heartbeat_cache={};self.refresh_job=None;self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
@@ -33,10 +33,10 @@ class App:
   self.sidebar=tk.Frame(root,bg=SIDEBAR,width=248);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
   tk.Frame(self.sidebar,bg=AMBER,height=4).pack(fill='x')
   tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=TEXT,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
-  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.2',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
+  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.3',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
   tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.nav_buttons={}
-  for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base')]:
+  for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base'),('Shift Calendar','◷  Shift Calendar')]:
    button=self.btn(self.sidebar,caption,lambda n=name:self.show(n));button.pack(fill='x',padx=13,pady=5);self.nav_buttons[name]=button
   tk.Frame(self.sidebar,bg=EDGE,height=1).pack(fill='x',padx=19,pady=(26,18))
   tk.Label(self.sidebar,text='DATABASE TOOLS',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
@@ -134,6 +134,7 @@ class App:
   if view=='Dashboard':self.dashboard()
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
+  elif view=='Shift Calendar':self.shift_calendar()
   else:self.knowledge()
   if view=='Machine Registry':self.schedule_floor_refresh()
  def layout_file(self):
@@ -179,6 +180,78 @@ class App:
   finally:
    try:lock.unlink()
    except OSError:pass
+ def shift_assignment(self,day):
+  """2026 Flex three-group cycle; Sundays are common rest days."""
+  if day.year!=2026:return None
+  if day.weekday()==6:return ('RD','RD','RD')
+  # Each 3-week cycle contains nine 2-day assignments, Monday-Saturday.
+  cycle=[
+   [(1,2,3),(3,2,1),(3,1,2)],
+   [(2,3,1),(1,3,2),(1,2,3)],
+   [(3,1,2),(2,1,3),(2,3,1)]
+  ]
+  week=((day-date(2026,4,6)).days//7)%3
+  return cycle[week][day.weekday()//2]
+ def shift_calendar(self):
+  self.heading('Shift Calendar','2026 shift roster  /  All groups shown equally  /  MORN = Morning  /  G\'YD = Night')
+  today=date.today()
+  if not hasattr(self,'shift_year'):self.shift_year=today.year if today.year==2026 else 2026
+  if not hasattr(self,'shift_month'):self.shift_month=today.month if today.year==2026 else 11
+  if not hasattr(self,'shift_day'):self.shift_day=today if today.year==2026 else date(2026,11,20)
+  controls=tk.Frame(self.main,bg=BG);controls.pack(fill='x',padx=30,pady=(0,12))
+  def navigate(offset):
+   value=self.shift_year*12+self.shift_month-1+offset
+   self.shift_year,self.shift_month=divmod(value,12);self.shift_month+=1
+   self.shift_day=date(self.shift_year,self.shift_month,min(self.shift_day.day,calendar.monthrange(self.shift_year,self.shift_month)[1]))
+   self.show('Shift Calendar')
+  self.btn(controls,'‹  Previous',lambda:navigate(-1)).pack(side='left',padx=(0,8))
+  self.label(controls,f'{calendar.month_name[self.shift_month]} {self.shift_year}',17,TEXT,True).pack(side='left',padx=14)
+  self.btn(controls,'Next  ›',lambda:navigate(1)).pack(side='left',padx=8)
+  def go_today():
+   self.shift_year=today.year;self.shift_month=today.month;self.shift_day=today;self.show('Shift Calendar')
+  self.btn(controls,'Today',go_today).pack(side='right')
+  selected=self.shift_day
+  assignment=self.shift_assignment(selected)
+  summary=tk.Frame(self.main,bg=PANEL,highlightbackground=EDGE,highlightthickness=1,padx=17,pady=13)
+  summary.pack(fill='x',padx=30,pady=(0,12))
+  self.label(summary,selected.strftime('%A, %d %B %Y').upper(),11,AMBER,True).pack(anchor='w',pady=(0,9))
+  if assignment is None:
+   self.label(summary,'Schedule not available for this year. Only the supplied 2026 roster is supported.',11,MUTED).pack(anchor='w')
+  elif assignment[0]=='RD':
+   self.label(summary,'REST DAY  /  All three groups (1, 2, 3)',15,TEXT,True).pack(anchor='w')
+  else:
+   for label,group,color in [('MORNING',assignment[0],AMBER),('NIGHT / GRAVEYARD',assignment[1],'#DCE4EB'),('OFF',assignment[2],'#9EAAB7')]:
+    tile=tk.Frame(summary,bg='#1B2026',padx=14,pady=9)
+    tile.pack(side='left',fill='x',expand=True,padx=(0,8))
+    self.label(tile,label,9,MUTED,True).pack(anchor='w')
+    self.label(tile,'SHIFT '+str(group),17,color,True).pack(anchor='w')
+  grid=tk.Frame(self.main,bg=BG);grid.pack(fill='both',expand=True,padx=30,pady=(0,12))
+  for col,label in enumerate(['MON','TUE','WED','THU','FRI','SAT','SUN']):
+   grid.grid_columnconfigure(col,weight=1,uniform='shift')
+   tk.Label(grid,text=label,bg=BG,fg=MUTED,font=('Segoe UI',9,'bold')).grid(row=0,column=col,sticky='ew',pady=(0,7))
+  for row,week in enumerate(calendar.Calendar(firstweekday=0).monthdatescalendar(self.shift_year,self.shift_month),start=1):
+   grid.grid_rowconfigure(row,weight=1)
+   for col,day in enumerate(week):
+    current=day.month==self.shift_month
+    selected_day=day==selected
+    shade='#342419' if selected_day else (PANEL if current else '#101317')
+    edge=AMBER if selected_day else EDGE
+    cell=tk.Frame(grid,bg=shade,highlightbackground=edge,highlightthickness=1,padx=7,pady=6)
+    cell.grid(row=row,column=col,sticky='nsew',padx=3,pady=3)
+    tk.Label(cell,text=str(day.day),bg=shade,fg=AMBER if selected_day else (TEXT if current else '#66717C'),font=('Segoe UI',11,'bold'),anchor='w').pack(fill='x')
+    value=self.shift_assignment(day)
+    if value is None:
+     label='No roster'
+    elif value[0]=='RD':
+     label='RD  ALL'
+    else:
+     label=f'M  {value[0]}    N  {value[1]}\nOFF  {value[2]}'
+    tk.Label(cell,text=label,bg=shade,fg=TEXT if current else MUTED,font=('Segoe UI',9),justify='left',anchor='w').pack(fill='x',pady=(5,0))
+    def select_day(d=day):
+     self.shift_year=d.year;self.shift_month=d.month;self.shift_day=d;self.show('Shift Calendar')
+    for widget in (cell,*cell.winfo_children()):
+     widget.bind('<Button-1>',lambda event,fn=select_day:fn())
+  self.label(self.main,'2026 source: supplied Flex shift calendar cards. Sundays = RD for all; OFF = scheduled off-group. Public holidays are not included.',9,MUTED).pack(anchor='w',padx=30,pady=(0,12))
  def dashboard(self):
   self.heading('Production overview','Manual machine status, immediate-attention pinboard and knowledge overview')
   bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=25,pady=(0,14))
