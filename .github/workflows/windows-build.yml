@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: 'Publish public GitHub Release v4.2.3 after successful build'
+        description: 'Publish public GitHub Release v4.2.4 after successful build'
         type: boolean
         required: true
         default: false
@@ -47,7 +47,7 @@ jobs:
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $tag = $env:GITHUB_REF.Substring(10)
           } else {
-            $tag = 'v4.2.3'
+            $tag = 'v4.2.4'
           }
           if (gh release view $tag --json tagName 2>$null) {
             gh release upload $tag AVI_Knowledge_Hub_Windows.zip --clobber
