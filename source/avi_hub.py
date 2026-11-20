@@ -12,7 +12,7 @@ DEFAULT=BASE/'Database'/'AVI_Database.csv'
 STATUSES=['Running','Down','Maintenance','Idle','Attention']
 STATUS_COLORS={'Running':'#39c99a','Down':'#ff6577','Maintenance':'#f6b75e','Idle':'#8193a8','Attention':'#ff875c'}
 SYMBOLS=['▣','◆','●','▲','■','⬢','✚','⚙','▤','◉']
-BG='#08090B'; PANEL='#14171B'; TEXT='#F4F7FA'; MUTED='#A2ABB6'; AMBER='#FF8C24'; EDGE='#30363D'; SIDEBAR='#0D0F12'
+BG='#090A0C'; PANEL='#141619'; TEXT='#F5F6F8'; MUTED='#98A0AA'; AMBER='#FF922E'; EDGE='#272C32'; SIDEBAR='#0E1013'
 ISSUES={
  'Camera not detected': [('Is the camera visible in approved device diagnostics?', 'If not, record the camera ID and check approved connection/power procedures.'),('Does the camera application show an error code?', 'Record the exact error and search the knowledge base.')],
  'Program loading failed':[('Is the selected program path correct?', 'Verify against the approved program location; do not modify production programs.'),('Does the message identify a missing file or access error?', 'Record the exact message and follow approved escalation steps.')],
@@ -30,14 +30,14 @@ class App:
   self.style.configure('Treeview.Heading',background='#1F242A',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
   self.style.map('Treeview',background=[('selected','#30363D')],foreground=[('selected','#ffffff')])
   self.style.configure('TCombobox',padding=7)
-  self.sidebar=tk.Frame(root,bg=SIDEBAR,width=248);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
-  tk.Frame(self.sidebar,bg=AMBER,height=4).pack(fill='x')
-  tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=TEXT,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
-  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.3',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
+  self.sidebar=tk.Frame(root,bg=SIDEBAR,width=258);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
+  tk.Frame(self.sidebar,bg=AMBER,height=2).pack(fill='x',padx=22)
+  tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=TEXT,font=('Segoe UI Semibold',25,'bold')).pack(anchor='w',padx=22,pady=(29,1))
+  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.3',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,38))
   tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.nav_buttons={}
   for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base'),('Shift Calendar','◷  Shift Calendar')]:
-   button=self.btn(self.sidebar,caption,lambda n=name:self.show(n));button.pack(fill='x',padx=13,pady=5);self.nav_buttons[name]=button
+   button=self.btn(self.sidebar,caption,lambda n=name:self.show(n),kind='nav');button.pack(fill='x',padx=12,pady=3);self.nav_buttons[name]=button
   tk.Frame(self.sidebar,bg=EDGE,height=1).pack(fill='x',padx=19,pady=(26,18))
   tk.Label(self.sidebar,text='DATABASE TOOLS',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.btn(self.sidebar,'↻  Reconnect',self.reconnect).pack(fill='x',padx=13,pady=5)
@@ -115,22 +115,37 @@ class App:
    win.destroy();self.show(self.view)
    messagebox.showinfo('Password updated','Editor password changed. Log in again with the new password.')
   self.btn(win,'Authorize & Change Password',commit).pack(anchor='e',padx=20,pady=16)
- def btn(self,parent,label,command):
-  return tk.Button(parent,text=label,command=command,bg='#1A1E23',fg=TEXT,activebackground='#30363D',activeforeground=AMBER,relief='flat',anchor='w',cursor='hand2',padx=17,pady=12,font=('Segoe UI',10,'bold'),bd=0,highlightthickness=0)
+ def btn(self,parent,label,command,kind='normal'):
+  nav=kind=='nav'
+  base=SIDEBAR if nav else '#22262B'
+  hover='#1B2026' if nav else '#30353B'
+  button=tk.Button(parent,text=label,command=command,bg=base,fg=MUTED if nav else TEXT,activebackground=hover,activeforeground=TEXT,relief='flat',anchor='w' if nav else 'center',cursor='hand2',padx=18,pady=13 if nav else 10,font=('Segoe UI',10,'bold' if not nav else 'normal'),bd=0,highlightthickness=0)
+  def enter(event):
+   if not nav or self.view!=next((name for name,b in self.nav_buttons.items() if b==button),None):button.configure(bg=hover,fg=TEXT)
+  def leave(event):
+   if nav:
+    active=self.view==next((name for name,b in self.nav_buttons.items() if b==button),None)
+    button.configure(bg='#22201C' if active else SIDEBAR,fg=AMBER if active else MUTED)
+   else:button.configure(bg=base,fg=TEXT)
+  button.bind('<Enter>',enter);button.bind('<Leave>',leave)
+  return button
  def label(self,parent,text,size=11,color=TEXT,bold=False):
   return tk.Label(parent,text=text,bg=parent.cget('bg'),fg=color,font=('Segoe UI',size,'bold' if bold else 'normal'),anchor='w',justify='left')
  def clear(self):
   for child in self.main.winfo_children():child.destroy()
  def heading(self,title,subtitle=''):
-  self.label(self.main,'ZENTREK  /  PRODUCTION OPERATIONS',9,AMBER,True).pack(anchor='w',padx=30,pady=(26,8))
-  self.label(self.main,title,28,TEXT,True).pack(anchor='w',padx=30,pady=(0,5))
-  self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=30,pady=(0,20))
-  tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=30,pady=(0,14))
+  header=tk.Frame(self.main,bg=BG);header.pack(fill='x',padx=34,pady=(30,19))
+  tk.Frame(header,bg=AMBER,width=3,height=60).pack(side='left',padx=(0,16),fill='y')
+  title_area=tk.Frame(header,bg=BG);title_area.pack(side='left',fill='x',expand=True)
+  self.label(title_area,'ZENTREK   /   OPERATIONS WORKSPACE',9,AMBER,True).pack(anchor='w',pady=(0,5))
+  self.label(title_area,title,27,TEXT,True).pack(anchor='w')
+  self.label(title_area,subtitle,10,MUTED).pack(anchor='w',pady=(6,0))
+  tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=34,pady=(0,19))
  def show(self,view):
   if self.refresh_job is not None:
    self.root.after_cancel(self.refresh_job);self.refresh_job=None
   self.view=view;self.clear()
-  for name,button in self.nav_buttons.items():button.configure(bg='#342419' if name==view else '#1A1E23',fg=AMBER if name==view else TEXT)
+  for name,button in self.nav_buttons.items():button.configure(bg='#22201C' if name==view else SIDEBAR,fg=AMBER if name==view else MUTED,font=('Segoe UI',10,'bold' if name==view else 'normal'))
   if view=='Dashboard':self.dashboard()
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
@@ -212,7 +227,7 @@ class App:
   self.btn(controls,'Today',go_today).pack(side='right')
   selected=self.shift_day
   assignment=self.shift_assignment(selected)
-  summary=tk.Frame(self.main,bg=PANEL,highlightbackground=EDGE,highlightthickness=1,padx=17,pady=13)
+  summary=tk.Frame(self.main,bg=PANEL,padx=21,pady=18)
   summary.pack(fill='x',padx=30,pady=(0,12))
   self.label(summary,selected.strftime('%A, %d %B %Y').upper(),11,AMBER,True).pack(anchor='w',pady=(0,9))
   if assignment is None:
@@ -221,7 +236,7 @@ class App:
    self.label(summary,'REST DAY  /  All three groups (1, 2, 3)',15,TEXT,True).pack(anchor='w')
   else:
    for label,group,color in [('MORNING',assignment[0],AMBER),('NIGHT / GRAVEYARD',assignment[1],'#DCE4EB'),('OFF',assignment[2],'#9EAAB7')]:
-    tile=tk.Frame(summary,bg='#1B2026',padx=14,pady=9)
+    tile=tk.Frame(summary,bg='#1C2025',padx=18,pady=14)
     tile.pack(side='left',fill='x',expand=True,padx=(0,8))
     self.label(tile,label,9,MUTED,True).pack(anchor='w')
     self.label(tile,'SHIFT '+str(group),17,color,True).pack(anchor='w')
@@ -234,9 +249,9 @@ class App:
    for col,day in enumerate(week):
     current=day.month==self.shift_month
     selected_day=day==selected
-    shade='#342419' if selected_day else (PANEL if current else '#101317')
-    edge=AMBER if selected_day else EDGE
-    cell=tk.Frame(grid,bg=shade,highlightbackground=edge,highlightthickness=1,padx=7,pady=6)
+    shade='#2B241C' if selected_day else (PANEL if current else '#101215')
+    edge=AMBER if selected_day else BG
+    cell=tk.Frame(grid,bg=shade,highlightbackground=edge,highlightthickness=1 if selected_day else 0,padx=9,pady=9)
     cell.grid(row=row,column=col,sticky='nsew',padx=3,pady=3)
     tk.Label(cell,text=str(day.day),bg=shade,fg=AMBER if selected_day else (TEXT if current else '#66717C'),font=('Segoe UI',11,'bold'),anchor='w').pack(fill='x')
     value=self.shift_assignment(day)
@@ -257,9 +272,10 @@ class App:
   bar=tk.Frame(self.main,bg=BG);bar.pack(fill='x',padx=25,pady=(0,14))
   attention=sum(m.get('status') in ('Down','Attention') for m in self.machines)
   for title,val,sub in [('MACHINES',str(len(self.machines)),'Editable floor registry'),('NEED ATTENTION',str(attention),'Down or attention'),('ARTICLES',str(len(self.rows)),'Knowledge records'),('DATABASE','READY' if self.path.exists() else 'MISSING','Shared CSV')]:
-   tile=tk.Frame(bar,bg=PANEL,padx=15,pady=17,highlightbackground=EDGE,highlightthickness=1);tile.pack(side='left',fill='both',expand=True,padx=4)
+   tile=tk.Frame(bar,bg=PANEL,padx=21,pady=20);tile.pack(side='left',fill='both',expand=True,padx=5)
+   tk.Frame(tile,bg=AMBER if title=='MACHINES' else EDGE,height=2).pack(fill='x',pady=(0,14))
    self.label(tile,title,9,MUTED,True).pack(anchor='w')
-   self.label(tile,val,22,AMBER if title!='NEED ATTENTION' or attention==0 else '#ff6577',True).pack(anchor='w',pady=5)
+   self.label(tile,val,25,TEXT if title!='NEED ATTENTION' or attention==0 else '#ff6577',True).pack(anchor='w',pady=5)
    self.label(tile,sub,9,MUTED).pack(anchor='w')
   top=tk.Frame(self.main,bg=BG);top.pack(fill='x',padx=30,pady=(9,8))
   self.label(top,'📌  IMMEDIATE ATTENTION  /  PINBOARD',13,AMBER,True).pack(side='left')
@@ -267,10 +283,10 @@ class App:
   board=tk.Frame(self.main,bg=BG);board.pack(fill='both',expand=True,padx=26)
   if not self.notes:self.label(board,'No pinned notes. Add a priority reminder for the production team.',11,MUTED).pack(anchor='w',padx=8,pady=15)
   for i,note in enumerate(self.notes):
-   card=tk.Frame(board,bg='#1B2026',padx=13,pady=10,highlightbackground=EDGE,highlightthickness=1);card.pack(fill='x',padx=4,pady=4)
-   header=tk.Frame(card,bg='#1B2026');header.pack(fill='x')
+   card=tk.Frame(board,bg=PANEL,padx=19,pady=15);card.pack(fill='x',padx=4,pady=4)
+   header=tk.Frame(card,bg=PANEL);header.pack(fill='x')
    self.label(header,'●  '+note.get('title','Attention'),11,AMBER,True).pack(side='left')
-   tk.Button(header,text='✕',command=lambda j=i:self.delete_note(j),bg='#1B2026',fg='#ff8996',relief='flat',cursor='hand2').pack(side='right')
+   tk.Button(header,text='✕',command=lambda j=i:self.delete_note(j),bg=PANEL,fg='#ff8996',relief='flat',cursor='hand2').pack(side='right')
    self.btn(header,'Edit',lambda j=i:self.add_note(j)).pack(side='right',padx=7)
    self.label(card,note.get('body',''),10,TEXT).pack(anchor='w',pady=(4,0))
   self.label(self.main,'Statuses and notes are manually maintained, not live telemetry.',9,MUTED).pack(anchor='w',padx=30,pady=(8,12))
