@@ -1,0 +1,33 @@
+name: Build ZENTREK Avalonia V4.2.5
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'avalonia/**'
+      - '.github/workflows/avalonia-build.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore dependencies
+        run: dotnet restore avalonia/Zentrek.csproj
+      - name: Build Windows application
+        run: dotnet build avalonia/Zentrek.csproj -c Release --no-restore
+      - name: Publish self-contained Windows EXE
+        run: dotnet publish avalonia/Zentrek.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o release
+      - name: Package app and empty database template
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release/Database | Out-Null
+          Set-Content -Path release/Database/AVI_Database_TEMPLATE.csv -Value 'id,title,category,machine,symptoms,solution'
+          Compress-Archive -Path release/* -DestinationPath ZENTREK_Avalonia_V4.2.5_Windows_x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZENTREK_Avalonia_V4.2.5_Windows_x64
+          path: ZENTREK_Avalonia_V4.2.5_Windows_x64.zip
