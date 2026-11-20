@@ -12,7 +12,7 @@ DEFAULT=BASE/'Database'/'AVI_Database.csv'
 STATUSES=['Running','Down','Maintenance','Idle','Attention']
 STATUS_COLORS={'Running':'#39c99a','Down':'#ff6577','Maintenance':'#f6b75e','Idle':'#8193a8','Attention':'#ff875c'}
 SYMBOLS=['▣','◆','●','▲','■','⬢','✚','⚙','▤','◉']
-BG='#090e16'; PANEL='#151e2b'; TEXT='#edf3fb'; MUTED='#8d9caf'; AMBER='#ffad45'; EDGE='#283647'; SIDEBAR='#101722'
+BG='#08090B'; PANEL='#14171B'; TEXT='#F4F7FA'; MUTED='#A2ABB6'; AMBER='#FF8C24'; EDGE='#30363D'; SIDEBAR='#0D0F12'
 ISSUES={
  'Camera not detected': [('Is the camera visible in approved device diagnostics?', 'If not, record the camera ID and check approved connection/power procedures.'),('Does the camera application show an error code?', 'Record the exact error and search the knowledge base.')],
  'Program loading failed':[('Is the selected program path correct?', 'Verify against the approved program location; do not modify production programs.'),('Does the message identify a missing file or access error?', 'Record the exact message and follow approved escalation steps.')],
@@ -21,25 +21,25 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.1 Preview');self.root.geometry('1240x790');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.2.2');self.root.geometry('1320x820');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.heartbeat_cache={};self.refresh_job=None;self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
   self.style=ttk.Style();self.style.theme_use('clam')
-  self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=37,borderwidth=0,font=('Segoe UI',10))
-  self.style.configure('Treeview.Heading',background='#263345',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
-  self.style.map('Treeview',background=[('selected','#38485a')],foreground=[('selected','#ffffff')])
+  self.style.configure('Treeview',background=PANEL,foreground=TEXT,fieldbackground=PANEL,rowheight=40,borderwidth=0,font=('Segoe UI',10))
+  self.style.configure('Treeview.Heading',background='#1F242A',foreground=AMBER,font=('Segoe UI',10,'bold'),padding=10)
+  self.style.map('Treeview',background=[('selected','#30363D')],foreground=[('selected','#ffffff')])
   self.style.configure('TCombobox',padding=7)
   self.sidebar=tk.Frame(root,bg=SIDEBAR,width=248);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
   tk.Frame(self.sidebar,bg=AMBER,height=4).pack(fill='x')
-  tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
-  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB',bg=SIDEBAR,fg=MUTED,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
-  tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#687a90',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
+  tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=TEXT,font=('Segoe UI',26,'bold')).pack(anchor='w',padx=22,pady=(29,1))
+  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.2',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,30))
+  tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.nav_buttons={}
   for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base')]:
    button=self.btn(self.sidebar,caption,lambda n=name:self.show(n));button.pack(fill='x',padx=13,pady=5);self.nav_buttons[name]=button
   tk.Frame(self.sidebar,bg=EDGE,height=1).pack(fill='x',padx=19,pady=(26,18))
-  tk.Label(self.sidebar,text='DATABASE TOOLS',bg=SIDEBAR,fg='#687a90',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
+  tk.Label(self.sidebar,text='DATABASE TOOLS',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.btn(self.sidebar,'↻  Reconnect',self.reconnect).pack(fill='x',padx=13,pady=5)
   self.btn(self.sidebar,'▤  Open Other CSV',self.open_csv).pack(fill='x',padx=13,pady=5)
   self.btn(self.sidebar,'↓  Save Database',self.save).pack(fill='x',padx=13,pady=5)
@@ -116,21 +116,21 @@ class App:
    messagebox.showinfo('Password updated','Editor password changed. Log in again with the new password.')
   self.btn(win,'Authorize & Change Password',commit).pack(anchor='e',padx=20,pady=16)
  def btn(self,parent,label,command):
-  return tk.Button(parent,text=label,command=command,bg='#202c3c',fg=TEXT,activebackground='#3a485b',activeforeground=AMBER,relief='flat',anchor='w',cursor='hand2',padx=17,pady=12,font=('Segoe UI',10,'bold'),bd=0,highlightthickness=0)
+  return tk.Button(parent,text=label,command=command,bg='#1A1E23',fg=TEXT,activebackground='#30363D',activeforeground=AMBER,relief='flat',anchor='w',cursor='hand2',padx=17,pady=12,font=('Segoe UI',10,'bold'),bd=0,highlightthickness=0)
  def label(self,parent,text,size=11,color=TEXT,bold=False):
   return tk.Label(parent,text=text,bg=parent.cget('bg'),fg=color,font=('Segoe UI',size,'bold' if bold else 'normal'),anchor='w',justify='left')
  def clear(self):
   for child in self.main.winfo_children():child.destroy()
  def heading(self,title,subtitle=''):
   self.label(self.main,'ZENTREK  /  PRODUCTION OPERATIONS',9,AMBER,True).pack(anchor='w',padx=30,pady=(26,8))
-  self.label(self.main,title,26,TEXT,True).pack(anchor='w',padx=30,pady=(0,5))
+  self.label(self.main,title,28,TEXT,True).pack(anchor='w',padx=30,pady=(0,5))
   self.label(self.main,subtitle,10,MUTED).pack(anchor='w',padx=30,pady=(0,20))
   tk.Frame(self.main,bg=EDGE,height=1).pack(fill='x',padx=30,pady=(0,14))
  def show(self,view):
   if self.refresh_job is not None:
    self.root.after_cancel(self.refresh_job);self.refresh_job=None
   self.view=view;self.clear()
-  for name,button in self.nav_buttons.items():button.configure(bg='#3a3028' if name==view else '#202c3c',fg=AMBER if name==view else TEXT)
+  for name,button in self.nav_buttons.items():button.configure(bg='#342419' if name==view else '#1A1E23',fg=AMBER if name==view else TEXT)
   if view=='Dashboard':self.dashboard()
   elif view=='Machine Registry':self.registry()
   elif view=='Troubleshooting Wizard':self.wizard()
@@ -194,10 +194,10 @@ class App:
   board=tk.Frame(self.main,bg=BG);board.pack(fill='both',expand=True,padx=26)
   if not self.notes:self.label(board,'No pinned notes. Add a priority reminder for the production team.',11,MUTED).pack(anchor='w',padx=8,pady=15)
   for i,note in enumerate(self.notes):
-   card=tk.Frame(board,bg='#263043',padx=13,pady=10,highlightbackground=EDGE,highlightthickness=1);card.pack(fill='x',padx=4,pady=4)
-   header=tk.Frame(card,bg='#263043');header.pack(fill='x')
+   card=tk.Frame(board,bg='#1B2026',padx=13,pady=10,highlightbackground=EDGE,highlightthickness=1);card.pack(fill='x',padx=4,pady=4)
+   header=tk.Frame(card,bg='#1B2026');header.pack(fill='x')
    self.label(header,'●  '+note.get('title','Attention'),11,AMBER,True).pack(side='left')
-   tk.Button(header,text='✕',command=lambda j=i:self.delete_note(j),bg='#263043',fg='#ff8996',relief='flat',cursor='hand2').pack(side='right')
+   tk.Button(header,text='✕',command=lambda j=i:self.delete_note(j),bg='#1B2026',fg='#ff8996',relief='flat',cursor='hand2').pack(side='right')
    self.btn(header,'Edit',lambda j=i:self.add_note(j)).pack(side='right',padx=7)
    self.label(card,note.get('body',''),10,TEXT).pack(anchor='w',pady=(4,0))
   self.label(self.main,'Statuses and notes are manually maintained, not live telemetry.',9,MUTED).pack(anchor='w',padx=30,pady=(8,12))
@@ -251,7 +251,7 @@ class App:
   self.label(win,'Manual floor status: '+str(m.get('status','Idle')),10,MUTED).pack(anchor='w',padx=22,pady=(0,14))
   self.label(win,'MACHINE KNOWLEDGE',12,AMBER,True).pack(anchor='w',padx=22,pady=(5,8))
   items=[r for r in self.rows if str(r.get('machine','')).strip().casefold() in (mid.casefold(),str(m.get('name','')).strip().casefold())]
-  listing=tk.Listbox(win,bg=PANEL,fg=TEXT,selectbackground='#394e63',relief='flat',font=('Segoe UI',11))
+  listing=tk.Listbox(win,bg=PANEL,fg=TEXT,selectbackground='#343E49',relief='flat',font=('Segoe UI',11))
   listing.pack(fill='both',expand=True,padx=22,pady=5)
   for r in items:listing.insert('end',r.get('title','Untitled'))
   article=tk.Text(win,height=9,bg=PANEL,fg=TEXT,wrap='word',relief='flat',font=('Segoe UI',10));article.pack(fill='both',expand=True,padx=22,pady=8)
@@ -283,7 +283,7 @@ class App:
   self.btn(controls,'Zoom -',lambda:self.zoom_floor(1/1.2)).pack(side='left',padx=2)
   self.btn(controls,'Save Floor Plan',self.save_layout).pack(side='right')
   self.label(self.main,'● Green = SmartVision running     ● Red = stopped     ● Grey = no fresh heartbeat     |     Manual status is separate',9,MUTED).pack(anchor='w',padx=30,pady=(0,7))
-  self.floor=tk.Canvas(self.main,bg='#121d2b',highlightthickness=1,highlightbackground=EDGE,height=420,cursor='crosshair' if self.edit_floor else 'arrow')
+  self.floor=tk.Canvas(self.main,bg='#101317',highlightthickness=1,highlightbackground=EDGE,height=420,cursor='crosshair' if self.edit_floor else 'arrow')
   self.floor.pack(fill='both',expand=True,padx=30,pady=(0,12))
   self.floor.bind('<Configure>',lambda e:self.draw_floor())
   self.floor.bind('<ButtonPress-1>',self.floor_press)
@@ -315,21 +315,21 @@ class App:
  def draw_floor(self):
   if not hasattr(self,'floor') or not self.floor.winfo_exists():return
   c=self.floor;c.delete('all');w=max(c.winfo_width(),550);h=max(c.winfo_height(),320)
-  for x in range(0,w,40):c.create_line(x,0,x,h,fill='#1c2b3b')
-  for y in range(0,h,40):c.create_line(0,y,w,y,fill='#1c2b3b')
-  c.create_text(17,15,text='PRODUCTION FLOOR  /  CUSTOM LAYOUT',fill='#72869b',anchor='nw',font=('Segoe UI',10,'bold'))
+  for x in range(0,w,40):c.create_line(x,0,x,h,fill='#1C2229')
+  for y in range(0,h,40):c.create_line(0,y,w,y,fill='#1C2229')
+  c.create_text(17,15,text='PRODUCTION FLOOR  /  CUSTOM LAYOUT',fill='#A2ABB6',anchor='nw',font=('Segoe UI',10,'bold'))
   for shape in self.shapes:
    try:
     x=float(shape.get('x',.5))*w;y=float(shape.get('y',.5))*h;kind=shape.get('type');label=str(shape.get('label',''))[:45]
-    if kind=='zone':c.create_rectangle(x-75,y-34,x+75,y+34,fill='#202f40',outline='#63809c',dash=(5,4),tags=('shape',shape['id']));c.create_text(x,y,text=label,fill='#a5b9ce',tags=('shape',shape['id']))
-    elif kind=='wall':c.create_line(x-70,y,x+70,y,fill='#71859a',width=7,tags=('shape',shape['id']))
+    if kind=='zone':c.create_rectangle(x-75,y-34,x+75,y+34,fill='#20272F',outline='#63809c',dash=(5,4),tags=('shape',shape['id']));c.create_text(x,y,text=label,fill='#E1E8EF',tags=('shape',shape['id']))
+    elif kind=='wall':c.create_line(x-70,y,x+70,y,fill='#A2ABB6',width=7,tags=('shape',shape['id']))
     else:c.create_text(x,y,text=label,fill=AMBER,font=('Segoe UI',11,'bold'),tags=('shape',shape['id']))
    except (ValueError,TypeError,KeyError):continue
   for m in self.machines:
    x=max(35,min(w-35,float(m.get('x',.5))*w*self.floor_zoom));y=max(45,min(h-28,float(m.get('y',.5))*h*self.floor_zoom))
    mid=m['id'];heartbeat=self.read_heartbeat(mid);live=heartbeat['state'];color={'Running':'#39c99a','Stopped':'#ff6577','Unknown':'#8193a8'}[live];selected=mid==self.machine
-   c.create_rectangle(x-45,y-23,x+45,y+26,fill=('#455466' if self.floor_mode=='Visual' else '#334354') if selected else ('#304154' if self.floor_mode=='Visual' else '#1c2b3b'),outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
-   if self.floor_mode=='Visual':c.create_rectangle(x-34,y-17,x+34,y-3,fill='#647b91',outline='#a3b6c8',tags=('machine',mid))
+   c.create_rectangle(x-45,y-23,x+45,y+26,fill=('#455466' if self.floor_mode=='Visual' else '#303944') if selected else ('#2C353F' if self.floor_mode=='Visual' else '#1C2229'),outline=AMBER if selected else color,width=2 if selected else 1,tags=('machine',mid))
+   if self.floor_mode=='Visual':c.create_rectangle(x-34,y-17,x+34,y-3,fill='#9AA6B3',outline='#DCE4EB',tags=('machine',mid))
    c.create_text(x,y-7,text=str(m.get('symbol','▣')),fill=color,font=('Segoe UI Symbol',17,'bold'),tags=('machine',mid))
    c.create_text(x,y+13,text=str(m.get('name',mid))[:17],fill=TEXT,font=('Segoe UI',9,'bold'),tags=('machine',mid))
    c.create_text(x,y+36,text=live,fill=color,font=('Segoe UI',8,'bold'),tags=('machine',mid))
