@@ -21,7 +21,7 @@ ISSUES={
 }
 class App:
  def __init__(self,root):
-  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.2.3');self.root.geometry('1320x820');self.root.minsize(1000,680);self.root.configure(bg=BG)
+  self.root=root;self.root.title('ZENTREK  /  AVI Knowledge Hub V4.2.4');self.root.geometry('1320x820');self.root.minsize(1000,680);self.root.configure(bg=BG)
   self.editor_unlocked=False;self.editor_password_hash=self.hash_secret(DEFAULT_EDITOR_PASSWORD);self.load_editor_password()
   self.rows=[];self.path=DEFAULT;self.dirty=False;self.layout_dirty=False;self.machine='AVI-01';self.view='Dashboard'
   self.heartbeat_cache={};self.refresh_job=None;self.machines=[];self.notes=[];self.shapes=[];self.floor_mode='Schematic';self.floor_zoom=1.0;self.layout_path=None;self.drag=None;self.edit_floor=False;self.load_layout()
@@ -33,7 +33,7 @@ class App:
   self.sidebar=tk.Frame(root,bg=SIDEBAR,width=258);self.sidebar.pack(side='left',fill='y');self.sidebar.pack_propagate(False)
   tk.Frame(self.sidebar,bg=AMBER,height=2).pack(fill='x',padx=22)
   tk.Label(self.sidebar,text='◈  ZENTREK',bg=SIDEBAR,fg=TEXT,font=('Segoe UI Semibold',25,'bold')).pack(anchor='w',padx=22,pady=(29,1))
-  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.3',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,38))
+  tk.Label(self.sidebar,text='AVI  /  KNOWLEDGE HUB  •  V4.2.4',bg=SIDEBAR,fg=AMBER,font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,38))
   tk.Label(self.sidebar,text='WORKSPACE',bg=SIDEBAR,fg='#87919D',font=('Segoe UI',9,'bold')).pack(anchor='w',padx=24,pady=(0,10))
   self.nav_buttons={}
   for name,caption in [('Dashboard','▦  Dashboard'),('Machine Registry','▤  Machine Registry'),('Troubleshooting Wizard','◇  Troubleshooting'),('Knowledge Base','▣  Knowledge Base'),('Shift Calendar','◷  Shift Calendar')]:
